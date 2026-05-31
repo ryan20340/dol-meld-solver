@@ -122,10 +122,8 @@ function buildGearBySlot(gearRows) {
 function buildGearOptionEntries(slotRows, selectedId, useHq) {
   const entries = slotRows.map((row) => {
     const rowId = Number(row?.id) || 0;
-    const slotsInfo = Number(row?.guaranteed_materia_slots) || 0;
-    const advInfo = row?.advanced_melding_permitted ? "+adv" : "";
     const quality = useHq && row?.can_be_hq ? "HQ" : "NQ";
-    const label = `${row?.name ?? `Item ${rowId}`} (i${row?.item_level ?? "?"}, ${slotsInfo}${advInfo})`;
+    const label = `${row?.name ?? `Item ${rowId}`} (i${row?.item_level ?? "?"})`;
     const iconUrl = iconUrlFromRow(row, { useHqVariant: quality === "HQ" });
     return {
       value: rowId,
@@ -169,7 +167,6 @@ function buildDropdownOptionHtml(option, isSelected = false) {
         ${iconHtml}
         <span>${escapeHtml(option?.label ?? "Item")}</span>
       </span>
-      <span class="icon-dropdown-quality">${escapeHtml(option?.quality ?? "NQ")}</span>
     </button>
   `;
 }
@@ -207,7 +204,6 @@ function buildSlotEditorRows(slotMap, selectedGearBySlot, options = {}) {
                 ${selectedIconHtml}
                 <span class="icon-dropdown-trigger-label">${escapeHtml(selectedEntry?.label ?? "None")}</span>
               </span>
-              <span class="icon-dropdown-quality">${escapeHtml(selectedEntry?.quality ?? "NQ")}</span>
               <span class="icon-dropdown-caret" aria-hidden="true">&#9662;</span>
             </button>
             <div class="icon-dropdown-menu" role="listbox" aria-label="${escapeHtml(SLOT_LABELS[slotKey] ?? slotKey)} options">
