@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DoL Meld Solver</title>
+  <link rel="stylesheet" href="./web/css/variables.css">
+  <link rel="stylesheet" href="./web/css/layout.css">
+  <link rel="stylesheet" href="./web/css/components.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="app-header">
+      <h1>DoL Theorycrafting Planner</h1>
+      <p id="status" class="status">Bootstrapping UI...</p>
+    </header>
+    <main class="app-main">
+      <button
+        id="controls-toggle"
+        class="controls-toggle"
+        type="button"
+        aria-controls="controls-panel"
+        aria-expanded="true"
+        title="Hide inputs"
+      >&lt;</button>
+      <section id="controls-panel" class="panel" aria-label="Inputs"></section>
+      <section id="results-panel" class="panel panel-results" aria-label="Results"></section>
+    </main>
+  </div>
+  <div id="solve-loading" class="solve-loading" aria-hidden="true">
+    <div class="solve-loading-card" role="status" aria-live="polite">
+      <div class="solve-loading-spinner" aria-hidden="true"></div>
+      <div class="solve-loading-content">
+        <p id="solve-loading-message">Solving meld plans...</p>
+        <p id="solve-loading-elapsed" class="solve-loading-meta">Elapsed: 0.0s</p>
+        <p id="solve-loading-visited" class="solve-loading-meta">Visited branches: 0</p>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="./web/js/app.js"></script>
+</body>
+</html>

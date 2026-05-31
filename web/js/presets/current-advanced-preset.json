@@ -1,0 +1,326 @@
+{
+  "version": "7.5",
+  "label": "Current Advanced Preset",
+  "advanced": {
+    "enabled": true,
+    "activeProfileIndex": 0,
+    "profiles": [
+      {
+        "name": "Legendary Foodless",
+        "enabled": true,
+        "useHq": true,
+        "allowedFoodIds": [],
+        "breakpoints": [
+          {
+            "name": "Legendary",
+            "stat": "gp",
+            "value": 970,
+            "priority": 4,
+            "enabled": true
+          },
+          {
+            "name": "Extra Gift",
+            "stat": "gp",
+            "value": 1020,
+            "priority": -1,
+            "enabled": true
+          },
+          {
+            "name": "Boon",
+            "stat": "perception",
+            "value": 5600,
+            "priority": 6,
+            "enabled": true
+          },
+          {
+            "name": "+1",
+            "stat": "gathering",
+            "value": 5400,
+            "priority": null,
+            "enabled": true
+          },
+          {
+            "name": "+2",
+            "stat": "gathering",
+            "value": 5643,
+            "priority": 2,
+            "enabled": true
+          },
+          {
+            "name": "+3",
+            "stat": "gathering",
+            "value": 5886,
+            "priority": null,
+            "enabled": true
+          },
+          {
+            "name": "BY2 +3 i730",
+            "stat": "gathering",
+            "value": 5949,
+            "priority": -1,
+            "enabled": true
+          }
+        ]
+      },
+      {
+        "name": "Legendary",
+        "enabled": true,
+        "useHq": true,
+        "allowedFoodIds": [
+          46254,
+          44843,
+          44103,
+          44078,
+          44099,
+          37283,
+          36061,
+          36054
+        ],
+        "breakpoints": [
+          {
+            "name": "Legendary",
+            "stat": "gp",
+            "value": 970,
+            "priority": 4,
+            "enabled": true
+          },
+          {
+            "name": "Extra Gift",
+            "stat": "gp",
+            "value": 1020,
+            "priority": -1,
+            "enabled": true
+          },
+          {
+            "name": "Boon",
+            "stat": "perception",
+            "value": 5600,
+            "priority": 6,
+            "enabled": true
+          },
+          {
+            "name": "+1",
+            "stat": "gathering",
+            "value": 5400,
+            "priority": null,
+            "enabled": true
+          },
+          {
+            "name": "+2",
+            "stat": "gathering",
+            "value": 5643,
+            "priority": 2,
+            "enabled": true
+          },
+          {
+            "name": "+3",
+            "stat": "gathering",
+            "value": 5886,
+            "priority": null,
+            "enabled": true
+          },
+          {
+            "name": "BY2 +3 i730",
+            "stat": "gathering",
+            "value": 5949,
+            "priority": -1,
+            "enabled": true
+          }
+        ]
+      },
+      {
+        "name": "Collectable",
+        "enabled": true,
+        "useHq": true,
+        "allowedFoodIds": [
+          46254,
+          44843,
+          44103,
+          44078,
+          44099,
+          37283,
+          36061,
+          36054
+        ],
+        "breakpoints": [
+          {
+            "name": "Collect",
+            "stat": "gp",
+            "value": 982,
+            "priority": 5,
+            "enabled": true
+          },
+          {
+            "name": "760 Intuition",
+            "stat": "perception",
+            "value": 5805,
+            "priority": null,
+            "enabled": true
+          },
+          {
+            "name": "750 intuition",
+            "stat": "perception",
+            "value": 5685,
+            "priority": null,
+            "enabled": true
+          },
+          {
+            "name": "770 Skill",
+            "stat": "perception",
+            "value": 5629,
+            "priority": 1,
+            "enabled": true
+          },
+          {
+            "name": "740 Int",
+            "stat": "perception",
+            "value": 5565,
+            "priority": null,
+            "enabled": true
+          },
+          {
+            "name": "760 Collect",
+            "stat": "perception",
+            "value": 5515,
+            "priority": 1,
+            "enabled": true
+          },
+          {
+            "name": "730 Collect",
+            "stat": "perception",
+            "value": 5445,
+            "priority": 3,
+            "enabled": true
+          },
+          {
+            "name": "760 Metic",
+            "stat": "gathering",
+            "value": 5805,
+            "priority": 1,
+            "enabled": true
+          },
+          {
+            "name": "750 Metic",
+            "stat": "gathering",
+            "value": 5685,
+            "priority": 1,
+            "enabled": true
+          },
+          {
+            "name": "770 Skill",
+            "stat": "gathering",
+            "value": 5629,
+            "priority": 1,
+            "enabled": true
+          },
+          {
+            "name": "740 Metic",
+            "stat": "gathering",
+            "value": 5565,
+            "priority": 1,
+            "enabled": true
+          },
+          {
+            "name": "760 Collect",
+            "stat": "gathering",
+            "value": 5515,
+            "priority": 1,
+            "enabled": true
+          }
+        ]
+      },
+      {
+        "name": "Collectable Foodless",
+        "enabled": true,
+        "useHq": true,
+        "allowedFoodIds": [],
+        "breakpoints": [
+          {
+            "name": "Collect",
+            "stat": "gp",
+            "value": 982,
+            "priority": 5,
+            "enabled": true
+          },
+          {
+            "name": "760 Intuition",
+            "stat": "perception",
+            "value": 5805,
+            "priority": null,
+            "enabled": true
+          },
+          {
+            "name": "750 intuition",
+            "stat": "perception",
+            "value": 5685,
+            "priority": null,
+            "enabled": true
+          },
+          {
+            "name": "770 Skill",
+            "stat": "perception",
+            "value": 5629,
+            "priority": 1,
+            "enabled": true
+          },
+          {
+            "name": "740 Int",
+            "stat": "perception",
+            "value": 5565,
+            "priority": null,
+            "enabled": true
+          },
+          {
+            "name": "760 Collect",
+            "stat": "perception",
+            "value": 5515,
+            "priority": 1,
+            "enabled": true
+          },
+          {
+            "name": "730 Collect",
+            "stat": "perception",
+            "value": 5445,
+            "priority": 3,
+            "enabled": true
+          },
+          {
+            "name": "760 Metic",
+            "stat": "gathering",
+            "value": 5805,
+            "priority": 1,
+            "enabled": true
+          },
+          {
+            "name": "750 Metic",
+            "stat": "gathering",
+            "value": 5685,
+            "priority": 1,
+            "enabled": true
+          },
+          {
+            "name": "770 Skill",
+            "stat": "gathering",
+            "value": 5629,
+            "priority": 1,
+            "enabled": true
+          },
+          {
+            "name": "740 Metic",
+            "stat": "gathering",
+            "value": 5565,
+            "priority": 1,
+            "enabled": true
+          },
+          {
+            "name": "760 Collect",
+            "stat": "gathering",
+            "value": 5515,
+            "priority": 1,
+            "enabled": true
+          }
+        ]
+      }
+    ]
+  }
+}

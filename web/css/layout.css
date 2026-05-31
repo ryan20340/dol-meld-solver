@@ -1,0 +1,104 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", Tahoma, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.app-shell {
+  width: 90%;
+  max-width: none;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.app-header {
+  margin-bottom: 16px;
+}
+
+.app-header h1 {
+  margin: 0;
+  font-size: 30px;
+}
+
+.app-subtitle {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+
+.status {
+  margin: 10px 0 0;
+  color: var(--muted);
+}
+
+.status.error {
+  color: #bf2121;
+}
+
+.app-main {
+  display: grid;
+  grid-template-columns: 420px minmax(0, 1fr);
+  gap: 16px;
+  position: relative;
+}
+
+.controls-toggle {
+  position: absolute;
+  top: 14px;
+  left: 408px;
+  z-index: 5;
+  width: 24px;
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--muted);
+  cursor: pointer;
+  box-shadow: var(--shadow);
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+}
+
+.controls-toggle:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.app-main.controls-collapsed {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.app-main.controls-collapsed #controls-panel {
+  display: none;
+}
+
+.app-main.controls-collapsed .controls-toggle {
+  left: -14px;
+}
+
+@media (max-width: 980px) {
+  .app-main {
+    grid-template-columns: 1fr;
+  }
+
+  .controls-toggle {
+    top: 8px;
+    left: auto;
+    right: 8px;
+    width: 28px;
+    height: 28px;
+    border-radius: 999px;
+  }
+
+  .app-main.controls-collapsed .controls-toggle {
+    left: auto;
+    right: 8px;
+  }
+}

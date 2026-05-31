@@ -1,0 +1,1164 @@
+{
+  "generated_at_utc": "2026-05-31T19:36:40.728953Z",
+  "tracked_stat_ids": {
+    "gp": 10,
+    "gathering": 72,
+    "perception": 73
+  },
+  "food_action_type": 844,
+  "meal_ui_category_id": 46,
+  "total_rows": 40,
+  "rows": [
+    {
+      "item_id": 4681,
+      "icon_id": 24153,
+      "name": "Jack-o'-lantern",
+      "item_level": 10,
+      "can_be_hq": true,
+      "item_action_id": 69,
+      "item_food_row_id": 164,
+      "effects": [
+        {
+          "stat": "perception",
+          "stat_id": 73,
+          "is_relative": true,
+          "nq_value": 6,
+          "nq_max": 6,
+          "hq_value": 7,
+          "hq_max": 7
+        }
+      ]
+    },
+    {
+      "item_id": 4708,
+      "icon_id": 24354,
+      "name": "Rabbit Pie",
+      "item_level": 10,
+      "can_be_hq": true,
+      "item_action_id": 75,
+      "item_food_row_id": 85,
+      "effects": [
+        {
+          "stat": "gathering",
+          "stat_id": 72,
+          "is_relative": true,
+          "nq_value": 6,
+          "nq_max": 6,
+          "hq_value": 7,
+          "hq_max": 7
+        },
+        {
+          "stat": "perception",
+          "stat_id": 73,
+          "is_relative": true,
+          "nq_value": 2,
+          "nq_max": 2,
+          "hq_value": 3,
+          "hq_max": 3
+        }
+      ]
+    },
+    {
+      "item_id": 4682,
+      "icon_id": 24154,
+      "name": "Parsnip Salad",
+      "item_level": 13,
+      "can_be_hq": true,
+      "item_action_id": 74,
+      "item_food_row_id": 165,
+      "effects": [
+        {
+          "stat": "perception",
+          "stat_id": 73,
+          "is_relative": true,
+          "nq_value": 6,
+          "nq_max": 6,
+          "hq_value": 7,
+          "hq_max": 7
+        },
+        {
+          "stat": "gp",
+          "stat_id": 10,
+          "is_relative": true,
+          "nq_value": 2,
+          "nq_max": 8,
+          "hq_value": 3,
+          "hq_max": 10
+        }
+      ]
+    },
+    {
+      "item_id": 4683,
+      "icon_id": 24158,
+      "name": "Roasted Nopales",
+      "item_level": 16,
+      "can_be_hq": true,
+      "item_action_id": 82,
+      "item_food_row_id": 166,
+      "effects": [
+        {
+          "stat": "perception",
+          "stat_id": 73,
+          "is_relative": true,
+          "nq_value": 6,
+          "nq_max": 6,
+          "hq_value": 7,
+          "hq_max": 8
+        },
+        {
+          "stat": "gathering",
+          "stat_id": 72,
+          "is_relative": true,
+          "nq_value": 2,
+          "nq_max": 2,
+          "hq_value": 3,
+          "hq_max": 3
+        }
+      ]
+    },
+    {
+      "item_id": 4709,
+      "icon_id": 24054,
+      "name": "Apple Tart",
+      "item_level": 17,
+      "can_be_hq": true,
+      "item_action_id": 85,
+      "item_food_row_id": 86,
+      "effects": [
+        {
+          "stat": "gathering",
+          "stat_id": 72,
+          "is_relative": true,
+          "nq_value": 6,
+          "nq_max": 7,
+          "hq_value": 7,
+          "hq_max": 9
+        },
+        {
+          "stat": "gp",
+          "stat_id": 10,
+          "is_relative": true,
+          "nq_value": 2,
+          "nq_max": 8,
+          "hq_value": 3,
+          "hq_max": 10
+        }
+      ]
+    },
+    {
+      "item_id": 4710,
+      "icon_id": 24357,
+      "name": "Shepherd's Pie",
+      "item_level": 22,
+      "can_be_hq": true,
+      "item_action_id": 93,
+      "item_food_row_id": 87,
+      "effects": [
+        {
+          "stat": "gathering",
+          "stat_id": 72,
+          "is_relative": true,
+          "nq_value": 6,
+          "nq_max": 8,
+          "hq_value": 7,
+          "hq_max": 10
+        },
+        {
+          "stat": "perception",
+          "stat_id": 73,
+          "is_relative": true,
+          "nq_value": 2,
+          "nq_max": 3,
+          "hq_value": 3,
+          "hq_max": 4
+        }
+      ]
+    },
+    {
+      "item_id": 4684,
+      "icon_id": 24152,
+      "name": "Spinach Saute",
+      "item_level": 22,
+      "can_be_hq": true,
+      "item_action_id": 94,
+      "item_food_row_id": 167,
+      "effects": [
+        {
+          "stat": "perception",
+          "stat_id": 73,
+          "is_relative": true,
+          "nq_value": 6,
+          "nq_max": 8,
+          "hq_value": 7,
+          "hq_max": 10
+        },
+        {
+          "stat": "gathering",
+          "stat_id": 72,
+          "is_relative": true,
+          "nq_value": 2,
+          "nq_max": 3,
+          "hq_value": 3,
+          "hq_max": 4
+        }
+      ]
+    },
+    {
+      "item_id": 4711,
+      "icon_id": 24305,
+      "name": "Eel Pie",
+      "item_level": 25,
+      "can_be_hq": true,
+      "item_action_id": 99,
+      "item_food_row_id": 88,
+      "effects": [
+        {
+          "stat": "gathering",
+          "stat_id": 72,
+          "is_relative": true,
+          "nq_value": 6,
+          "nq_max": 9,
+          "hq_value": 7,
+          "hq_max": 11
+        },
+        {
+          "stat": "perception",
+          "stat_id": 73,
+          "is_relative": true,
+          "nq_value": 2,
+          "nq_max": 3,
+          "hq_value": 3,
+          "hq_max": 4
+        }
+      ]
+    },
+    {
+      "item_id": 4685,
+      "icon_id": 24157,
+      "name": "Alligator Salad",
+      "item_level": 30,
+      "can_be_hq": true,
+      "item_action_id": 109,
+      "item_food_row_id": 168,
+      "effects": [
+        {
+          "stat": "perception",
+          "stat_id": 73,
+          "is_relative": true,
+          "nq_value": 6,
+          "nq_max": 10,
+          "hq_value": 7,
+          "hq_max": 12
+        },
+        {
+          "stat": "gp",
+          "stat_id": 10,
+          "is_relative": true,
+          "nq_value": 2,
+          "nq_max": 9,
+          "hq_value": 3,
+          "hq_max": 11
+        }
+      ]
+    },
+    {
+      "item_id": 4712,
+      "icon_id": 24056,
+      "name": "Blood Currant Tart",
+      "item_level": 32,
+      "can_be_hq": true,
+      "item_action_id": 113,
+      "item_food_row_id": 89,
+      "effects": [
+        {
+          "stat": "gathering",
+          "stat_id": 72,
+          "is_relative": true,
+          "nq_value": 6,
+          "nq_max": 10,
+          "hq_value": 7,
+          "hq_max": 12
+        },
+        {
+          "stat": "gp",
+          "stat_id": 10,
+          "is_relative": true,
+          "nq_value": 2,
+          "nq_max": 9,
+          "hq_value": 3,
+          "hq_max": 11
+        }
+      ]
+    },
+    {
+      "item_id": 4686,
+      "icon_id": 24155,
+      "name": "Sauerkraut",
+      "item_level": 35,
+      "can_be_hq": true,
+      "item_action_id": 118,
+      "item_food_row_id": 169,
+      "effects": [
+        {
+          "stat": "perception",
+          "stat_id": 73,
+          "is_relative": true,
+          "nq_value": 6,
+          "nq_max": 11,
+          "hq_value": 7,
+          "hq_max": 14
+        },
+        {
+          "stat": "gp",
+          "stat_id": 10,
+          "is_relative": true,
+          "nq_value": 2,
+          "nq_max": 9,
+          "hq_value": 3,
+          "hq_max": 11
+        }
+      ]
+    },
+    {
+      "item_id": 4687,
+      "icon_id": 24159,
+      "name": "Stuffed Artichoke",
+      "item_level": 39,
+      "can_be_hq": true,
+      "item_action_id": 123,
+      "item_food_row_id": 170,
+      "effects": [
+        {
+          "stat": "perception",
+          "stat_id": 73,
+          "is_relative": true,
+          "nq_value": 6,
+          "nq_max": 13,
+          "hq_value": 7,
+          "hq_max": 16
+        },
+        {
+          "stat": "gathering",
+          "stat_id": 72,
+          "is_relative": true,
+          "nq_value": 2,
+          "nq_max": 5,
+          "hq_value": 3,
+          "hq_max": 6
+        }
+      ]
+    },
+    {
+      "item_id": 4713,
+      "icon_id": 24057,
+      "name": "Crowned Pie",
+      "item_level": 50,
+      "can_be_hq": true,
+      "item_action_id": 141,
+      "item_food_row_id": 90,
+      "effects": [
+        {
+          "stat": "gathering",
+          "stat_id": 72,
+          "is_relative": true,
+          "nq_value": 6,
+          "nq_max": 14,
+          "hq_value": 7,
+          "hq_max": 17
+        },
+        {
+          "stat": "gp",
+          "stat_id": 10,
+          "is_relative": true,
+          "nq_value": 2,
+          "nq_max": 10,
+          "hq_value": 3,
+          "hq_max": 12
+        }
+      ]
+    },
+    {
+      "item_id": 4715,
+      "icon_id": 24252,
+      "name": "Trapper's Quiche",
+      "item_level": 50,
+      "can_be_hq": true,
+      "item_action_id": 149,
+      "item_food_row_id": 91,
+      "effects": [
+        {
+          "stat": "gathering",
+          "stat_id": 72,
+          "is_relative": true,
+          "nq_value": 6,
+          "nq_max": 14,
+          "hq_value": 7,
+          "hq_max": 17
+        },
+        {
+          "stat": "perception",
+          "stat_id": 73,
+          "is_relative": true,
+          "nq_value": 2,
+          "nq_max": 6,
+          "hq_value": 3,
+          "hq_max": 7
+        }
+      ]
+    },
+    {
+      "item_id": 4688,
+      "icon_id": 24151,
+      "name": "Landtrap Salad",
+      "item_level": 55,
+      "can_be_hq": true,
+      "item_action_id": 140,
+      "item_food_row_id": 171,
+      "effects": [
+        {
+          "stat": "perception",
+          "stat_id": 73,
+          "is_relative": true,
+          "nq_value": 6,
+          "nq_max": 15,
+          "hq_value": 7,
+          "hq_max": 19
+        },
+        {
+          "stat": "gp",
+          "stat_id": 10,
+          "is_relative": true,
+          "nq_value": 2,
+          "nq_max": 10,
+          "hq_value": 3,
+          "hq_max": 12
+        }
+      ]
+    },
+    {
+      "item_id": 4714,
+      "icon_id": 24156,
+      "name": "Tomato Pie",
+      "item_level": 55,
+      "can_be_hq": true,
+      "item_action_id": 134,
+      "item_food_row_id": 92,
+      "effects": [
+        {
+          "stat": "gathering",
+          "stat_id": 72,
+          "is_relative": true,
+          "nq_value": 6,
+          "nq_max": 15,
+          "hq_value": 7,
+          "hq_max": 19
+        },
+        {
+          "stat": "perception",
+          "stat_id": 73,
+          "is_relative": true,
+          "nq_value": 2,
+          "nq_max": 6,
+          "hq_value": 3,
+          "hq_max": 8
+        }
+      ]
+    },
+    {
+      "item_id": 7575,
+      "icon_id": 24252,
+      "name": "Spinach Quiche",
+      "item_level": 70,
+      "can_be_hq": true,
+      "item_action_id": 396,
+      "item_food_row_id": 93,
+      "effects": [
+        {
+          "stat": "gathering",
+          "stat_id": 72,
+          "is_relative": true,
+          "nq_value": 6,
+          "nq_max": 19,
+          "hq_value": 7,
+          "hq_max": 24
+        },
+        {
+          "stat": "perception",
+          "stat_id": 73,
+          "is_relative": true,
+          "nq_value": 2,
+          "nq_max": 8,
+          "hq_value": 3,
+          "hq_max": 10
+        }
+      ]
+    },
+    {
+      "item_id": 9334,
+      "icon_id": 24258,
+      "name": "Haddock Dip",
+      "item_level": 90,
+      "can_be_hq": true,
+      "item_action_id": 499,
+      "item_food_row_id": 172,
+      "effects": [
+        {
+          "stat": "perception",
+          "stat_id": 73,
+          "is_relative": true,
+          "nq_value": 6,
+          "nq_max": 22,
+          "hq_value": 7,
+          "hq_max": 28
+        },
+        {
+          "stat": "gp",
+          "stat_id": 10,
+          "is_relative": true,
+          "nq_value": 2,
+          "nq_max": 10,
+          "hq_value": 3,
+          "hq_max": 12
+        }
+      ]
+    },
+    {
+      "item_id": 10146,
+      "icon_id": 24057,
+      "name": "Better Crowned Pie",
+      "item_level": 110,
+      "can_be_hq": false,
+      "item_action_id": 614,
+      "item_food_row_id": 192,
+      "effects": [
+        {
+          "stat": "gathering",
+          "stat_id": 72,
+          "is_relative": true,
+          "nq_value": 6,
+          "nq_max": 24,
+          "hq_value": 7,
+          "hq_max": 30
+        }
+      ]
+    },
+    {
+      "item_id": 12868,
+      "icon_id": 24159,
+      "name": "Stuffed Chysahl",
+      "item_level": 150,
+      "can_be_hq": true,
+      "item_action_id": 721,
+      "item_food_row_id": 219,
+      "effects": [
+        {
+          "stat": "gp",
+          "stat_id": 10,
+          "is_relative": true,
+          "nq_value": 6,
+          "nq_max": 30,
+          "hq_value": 7,
+          "hq_max": 38
+        },
+        {
+          "stat": "perception",
+          "stat_id": 73,
+          "is_relative": true,
+          "nq_value": 2,
+          "nq_max": 11,
+          "hq_value": 3,
+          "hq_max": 14
+        }
+      ]
+    },
+    {
+      "item_id": 12870,
+      "icon_id": 24078,
+      "name": "Snurbleberry Tart",
+      "item_level": 160,
+      "can_be_hq": true,
+      "item_action_id": 723,
+      "item_food_row_id": 221,
+      "effects": [
+        {
+          "stat": "gathering",
+          "stat_id": 72,
+          "is_relative": true,
+          "nq_value": 6,
+          "nq_max": 30,
+          "hq_value": 7,
+          "hq_max": 37
+        },
+        {
+          "stat": "gp",
+          "stat_id": 10,
+          "is_relative": true,
+          "nq_value": 3,
+          "nq_max": 15,
+          "hq_value": 4,
+          "hq_max": 19
+        }
+      ]
+    },
+    {
+      "item_id": 15651,
+      "icon_id": 24018,
+      "name": "Pasta Ortolano",
+      "item_level": 220,
+      "can_be_hq": true,
+      "item_action_id": 1011,
+      "item_food_row_id": 254,
+      "effects": [
+        {
+          "stat": "gathering",
+          "stat_id": 72,
+          "is_relative": true,
+          "nq_value": 5,
+          "nq_max": 27,
+          "hq_value": 6,
+          "hq_max": 34
+        },
+        {
+          "stat": "perception",
+          "stat_id": 73,
+          "is_relative": true,
+          "nq_value": 5,
+          "nq_max": 27,
+          "hq_value": 6,
+          "hq_max": 34
+        },
+        {
+          "stat": "gp",
+          "stat_id": 10,
+          "is_relative": true,
+          "nq_value": 2,
+          "nq_max": 10,
+          "hq_value": 2,
+          "hq_max": 13
+        }
+      ]
+    },
+    {
+      "item_id": 19831,
+      "icon_id": 24160,
+      "name": "Gameni",
+      "item_level": 276,
+      "can_be_hq": true,
+      "item_action_id": 1332,
+      "item_food_row_id": 328,
+      "effects": [
+        {
+          "stat": "gp",
+          "stat_id": 10,
+          "is_relative": true,
+          "nq_value": 6,
+          "nq_max": 34,
+          "hq_value": 7,
+          "hq_max": 42
+        },
+        {
+          "stat": "gathering",
+          "stat_id": 72,
+          "is_relative": true,
+          "nq_value": 2,
+          "nq_max": 18,
+          "hq_value": 3,
+          "hq_max": 23
+        }
+      ]
+    },
+    {
+      "item_id": 19839,
+      "icon_id": 24354,
+      "name": "Nomad Meat Pie",
+      "item_level": 279,
+      "can_be_hq": true,
+      "item_action_id": 1340,
+      "item_food_row_id": 336,
+      "effects": [
+        {
+          "stat": "gathering",
+          "stat_id": 72,
+          "is_relative": true,
+          "nq_value": 6,
+          "nq_max": 46,
+          "hq_value": 7,
+          "hq_max": 57
+        },
+        {
+          "stat": "perception",
+          "stat_id": 73,
+          "is_relative": true,
+          "nq_value": 2,
+          "nq_max": 18,
+          "hq_value": 3,
+          "hq_max": 23
+        }
+      ]
+    },
+    {
+      "item_id": 19830,
+      "icon_id": 24112,
+      "name": "Jhammel Moussaka",
+      "item_level": 290,
+      "can_be_hq": true,
+      "item_action_id": 1331,
+      "item_food_row_id": 327,
+      "effects": [
+        {
+          "stat": "perception",
+          "stat_id": 73,
+          "is_relative": true,
+          "nq_value": 6,
+          "nq_max": 46,
+          "hq_value": 7,
+          "hq_max": 58
+        },
+        {
+          "stat": "gathering",
+          "stat_id": 72,
+          "is_relative": true,
+          "nq_value": 2,
+          "nq_max": 18,
+          "hq_value": 3,
+          "hq_max": 23
+        }
+      ]
+    },
+    {
+      "item_id": 23185,
+      "icon_id": 24085,
+      "name": "Konpeito",
+      "item_level": 320,
+      "can_be_hq": true,
+      "item_action_id": 1651,
+      "item_food_row_id": 370,
+      "effects": [
+        {
+          "stat": "perception",
+          "stat_id": 73,
+          "is_relative": true,
+          "nq_value": 6,
+          "nq_max": 54,
+          "hq_value": 7,
+          "hq_max": 68
+        },
+        {
+          "stat": "gp",
+          "stat_id": 10,
+          "is_relative": true,
+          "nq_value": 3,
+          "nq_max": 17,
+          "hq_value": 4,
+          "hq_max": 21
+        }
+      ]
+    },
+    {
+      "item_id": 27865,
+      "icon_id": 24202,
+      "name": "Mushroom Saute",
+      "item_level": 406,
+      "can_be_hq": true,
+      "item_action_id": 1958,
+      "item_food_row_id": 414,
+      "effects": [
+        {
+          "stat": "gathering",
+          "stat_id": 72,
+          "is_relative": true,
+          "nq_value": 6,
+          "nq_max": 61,
+          "hq_value": 7,
+          "hq_max": 76
+        },
+        {
+          "stat": "perception",
+          "stat_id": 73,
+          "is_relative": true,
+          "nq_value": 2,
+          "nq_max": 30,
+          "hq_value": 3,
+          "hq_max": 38
+        }
+      ]
+    },
+    {
+      "item_id": 27870,
+      "icon_id": 24163,
+      "name": "Peppered Popotoes",
+      "item_level": 412,
+      "can_be_hq": true,
+      "item_action_id": 1963,
+      "item_food_row_id": 419,
+      "effects": [
+        {
+          "stat": "gp",
+          "stat_id": 10,
+          "is_relative": true,
+          "nq_value": 23,
+          "nq_max": 40,
+          "hq_value": 29,
+          "hq_max": 50
+        },
+        {
+          "stat": "gathering",
+          "stat_id": 72,
+          "is_relative": true,
+          "nq_value": 2,
+          "nq_max": 30,
+          "hq_value": 3,
+          "hq_max": 38
+        }
+      ]
+    },
+    {
+      "item_id": 27878,
+      "icon_id": 24007,
+      "name": "Coffee Biscuit",
+      "item_level": 418,
+      "can_be_hq": true,
+      "item_action_id": 1971,
+      "item_food_row_id": 427,
+      "effects": [
+        {
+          "stat": "perception",
+          "stat_id": 73,
+          "is_relative": true,
+          "nq_value": 6,
+          "nq_max": 62,
+          "hq_value": 7,
+          "hq_max": 77
+        },
+        {
+          "stat": "gp",
+          "stat_id": 10,
+          "is_relative": true,
+          "nq_value": 6,
+          "nq_max": 22,
+          "hq_value": 8,
+          "hq_max": 28
+        }
+      ]
+    },
+    {
+      "item_id": 28721,
+      "icon_id": 24032,
+      "name": "Arros Negre",
+      "item_level": 460,
+      "can_be_hq": true,
+      "item_action_id": 2089,
+      "item_food_row_id": 460,
+      "effects": [
+        {
+          "stat": "perception",
+          "stat_id": 73,
+          "is_relative": true,
+          "nq_value": 6,
+          "nq_max": 74,
+          "hq_value": 7,
+          "hq_max": 93
+        },
+        {
+          "stat": "gathering",
+          "stat_id": 72,
+          "is_relative": true,
+          "nq_value": 2,
+          "nq_max": 34,
+          "hq_value": 3,
+          "hq_max": 42
+        }
+      ]
+    },
+    {
+      "item_id": 30481,
+      "icon_id": 24329,
+      "name": "Crab Cakes",
+      "item_level": 490,
+      "can_be_hq": true,
+      "item_action_id": 2187,
+      "item_food_row_id": 482,
+      "effects": [
+        {
+          "stat": "gp",
+          "stat_id": 10,
+          "is_relative": true,
+          "nq_value": 23,
+          "nq_max": 44,
+          "hq_value": 29,
+          "hq_max": 55
+        },
+        {
+          "stat": "perception",
+          "stat_id": 73,
+          "is_relative": true,
+          "nq_value": 2,
+          "nq_max": 38,
+          "hq_value": 3,
+          "hq_max": 47
+        }
+      ]
+    },
+    {
+      "item_id": 36047,
+      "icon_id": 24165,
+      "name": "Carrot Nibbles",
+      "item_level": 527,
+      "can_be_hq": true,
+      "item_action_id": 979,
+      "item_food_row_id": 522,
+      "effects": [
+        {
+          "stat": "gathering",
+          "stat_id": 72,
+          "is_relative": true,
+          "nq_value": 6,
+          "nq_max": 76,
+          "hq_value": 7,
+          "hq_max": 95
+        },
+        {
+          "stat": "perception",
+          "stat_id": 73,
+          "is_relative": true,
+          "nq_value": 2,
+          "nq_max": 39,
+          "hq_value": 3,
+          "hq_max": 49
+        }
+      ]
+    },
+    {
+      "item_id": 36054,
+      "icon_id": 24112,
+      "name": "Yakow Moussaka",
+      "item_level": 540,
+      "can_be_hq": true,
+      "item_action_id": 986,
+      "item_food_row_id": 529,
+      "effects": [
+        {
+          "stat": "gp",
+          "stat_id": 10,
+          "is_relative": true,
+          "nq_value": 23,
+          "nq_max": 44,
+          "hq_value": 29,
+          "hq_max": 55
+        },
+        {
+          "stat": "gathering",
+          "stat_id": 72,
+          "is_relative": true,
+          "nq_value": 2,
+          "nq_max": 48,
+          "hq_value": 3,
+          "hq_max": 60
+        }
+      ]
+    },
+    {
+      "item_id": 36061,
+      "icon_id": 24051,
+      "name": "Sideritis Cookie",
+      "item_level": 554,
+      "can_be_hq": true,
+      "item_action_id": 993,
+      "item_food_row_id": 536,
+      "effects": [
+        {
+          "stat": "perception",
+          "stat_id": 73,
+          "is_relative": true,
+          "nq_value": 6,
+          "nq_max": 81,
+          "hq_value": 7,
+          "hq_max": 101
+        },
+        {
+          "stat": "gp",
+          "stat_id": 10,
+          "is_relative": true,
+          "nq_value": 8,
+          "nq_max": 24,
+          "hq_value": 10,
+          "hq_max": 30
+        }
+      ]
+    },
+    {
+      "item_id": 37283,
+      "icon_id": 24330,
+      "name": "Kalamarakia Tiganita",
+      "item_level": 590,
+      "can_be_hq": true,
+      "item_action_id": 1223,
+      "item_food_row_id": 568,
+      "effects": [
+        {
+          "stat": "perception",
+          "stat_id": 73,
+          "is_relative": true,
+          "nq_value": 6,
+          "nq_max": 99,
+          "hq_value": 7,
+          "hq_max": 124
+        },
+        {
+          "stat": "gathering",
+          "stat_id": 72,
+          "is_relative": true,
+          "nq_value": 2,
+          "nq_max": 51,
+          "hq_value": 3,
+          "hq_max": 64
+        }
+      ]
+    },
+    {
+      "item_id": 44099,
+      "icon_id": 24068,
+      "name": "Turali Pineapple Ponzecake",
+      "item_level": 657,
+      "can_be_hq": true,
+      "item_action_id": 2507,
+      "item_food_row_id": 624,
+      "effects": [
+        {
+          "stat": "gathering",
+          "stat_id": 72,
+          "is_relative": true,
+          "nq_value": 6,
+          "nq_max": 120,
+          "hq_value": 7,
+          "hq_max": 151
+        },
+        {
+          "stat": "perception",
+          "stat_id": 73,
+          "is_relative": true,
+          "nq_value": 2,
+          "nq_max": 62,
+          "hq_value": 3,
+          "hq_max": 78
+        }
+      ]
+    },
+    {
+      "item_id": 44078,
+      "icon_id": 24047,
+      "name": "Nasi Goreng",
+      "item_level": 670,
+      "can_be_hq": true,
+      "item_action_id": 2514,
+      "item_food_row_id": 631,
+      "effects": [
+        {
+          "stat": "gp",
+          "stat_id": 10,
+          "is_relative": true,
+          "nq_value": 23,
+          "nq_max": 46,
+          "hq_value": 29,
+          "hq_max": 58
+        },
+        {
+          "stat": "gathering",
+          "stat_id": 72,
+          "is_relative": true,
+          "nq_value": 2,
+          "nq_max": 64,
+          "hq_value": 3,
+          "hq_max": 80
+        }
+      ]
+    },
+    {
+      "item_id": 44103,
+      "icon_id": 24372,
+      "name": "Stuffed Peppers",
+      "item_level": 684,
+      "can_be_hq": true,
+      "item_action_id": 2521,
+      "item_food_row_id": 638,
+      "effects": [
+        {
+          "stat": "perception",
+          "stat_id": 73,
+          "is_relative": true,
+          "nq_value": 6,
+          "nq_max": 125,
+          "hq_value": 7,
+          "hq_max": 157
+        },
+        {
+          "stat": "gp",
+          "stat_id": 10,
+          "is_relative": true,
+          "nq_value": 8,
+          "nq_max": 25,
+          "hq_value": 10,
+          "hq_max": 32
+        }
+      ]
+    },
+    {
+      "item_id": 44843,
+      "icon_id": 24338,
+      "name": "Cloudsail Meuniere",
+      "item_level": 720,
+      "can_be_hq": true,
+      "item_action_id": 2618,
+      "item_food_row_id": 672,
+      "effects": [
+        {
+          "stat": "perception",
+          "stat_id": 73,
+          "is_relative": true,
+          "nq_value": 6,
+          "nq_max": 140,
+          "hq_value": 7,
+          "hq_max": 176
+        },
+        {
+          "stat": "gathering",
+          "stat_id": 72,
+          "is_relative": true,
+          "nq_value": 2,
+          "nq_max": 72,
+          "hq_value": 3,
+          "hq_max": 91
+        }
+      ]
+    },
+    {
+      "item_id": 46254,
+      "icon_id": 24305,
+      "name": "Goldentail Pie",
+      "item_level": 750,
+      "can_be_hq": true,
+      "item_action_id": 2770,
+      "item_food_row_id": 695,
+      "effects": [
+        {
+          "stat": "gathering",
+          "stat_id": 72,
+          "is_relative": true,
+          "nq_value": 6,
+          "nq_max": 150,
+          "hq_value": 7,
+          "hq_max": 188
+        },
+        {
+          "stat": "perception",
+          "stat_id": 73,
+          "is_relative": true,
+          "nq_value": 2,
+          "nq_max": 77,
+          "hq_value": 3,
+          "hq_max": 97
+        }
+      ]
+    }
+  ]
+}

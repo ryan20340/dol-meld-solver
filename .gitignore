@@ -1,0 +1,13 @@
+# Local/private notes
+personal-setup.md
+PLAN.md
+
+# Python cache artifacts
+__pycache__/
+*.pyc
+
+# Optional local IDE metadata
+.vscode/
+
+# Processed JSON's instead of CSV's from datamine
+data/*.csv

@@ -1,0 +1,492 @@
+{
+  "generated_at_utc": "2026-05-31T19:36:38.579329Z",
+  "tracked_stat_ids": {
+    "gp": 10,
+    "gathering": 72,
+    "perception": 73
+  },
+  "tracked_stat_slot_modifiers": {
+    "gp": {
+      "main_hand": 20,
+      "off_hand": 20,
+      "head": 20,
+      "body": 20,
+      "hands": 20,
+      "waist": 0,
+      "legs": 20,
+      "feet": 40,
+      "ears": 250,
+      "neck": 250,
+      "wrists": 250,
+      "ring": 130
+    },
+    "gathering": {
+      "main_hand": 350,
+      "off_hand": 200,
+      "head": 20,
+      "body": 200,
+      "hands": 150,
+      "waist": 0,
+      "legs": 100,
+      "feet": 10,
+      "ears": 10,
+      "neck": 10,
+      "wrists": 10,
+      "ring": 10
+    },
+    "perception": {
+      "main_hand": 200,
+      "off_hand": 350,
+      "head": 200,
+      "body": 100,
+      "hands": 10,
+      "waist": 0,
+      "legs": 50,
+      "feet": 110,
+      "ears": 10,
+      "neck": 10,
+      "wrists": 10,
+      "ring": 10
+    }
+  },
+  "params": [
+    {
+      "id": 1,
+      "name": "Strength",
+      "packet_index": 0,
+      "order_priority": 12
+    },
+    {
+      "id": 2,
+      "name": "Dexterity",
+      "packet_index": 1,
+      "order_priority": 13
+    },
+    {
+      "id": 3,
+      "name": "Vitality",
+      "packet_index": 2,
+      "order_priority": 14
+    },
+    {
+      "id": 4,
+      "name": "Intelligence",
+      "packet_index": 3,
+      "order_priority": 15
+    },
+    {
+      "id": 5,
+      "name": "Mind",
+      "packet_index": 4,
+      "order_priority": 16
+    },
+    {
+      "id": 6,
+      "name": "Piety",
+      "packet_index": 5,
+      "order_priority": 25
+    },
+    {
+      "id": 7,
+      "name": "HP",
+      "packet_index": 6,
+      "order_priority": 48
+    },
+    {
+      "id": 8,
+      "name": "MP",
+      "packet_index": 7,
+      "order_priority": 49
+    },
+    {
+      "id": 9,
+      "name": "TP",
+      "packet_index": 8,
+      "order_priority": 50
+    },
+    {
+      "id": 10,
+      "name": "GP",
+      "packet_index": 9,
+      "order_priority": 35
+    },
+    {
+      "id": 11,
+      "name": "CP",
+      "packet_index": 10,
+      "order_priority": 32
+    },
+    {
+      "id": 12,
+      "name": "Physical Damage",
+      "packet_index": -1,
+      "order_priority": 1
+    },
+    {
+      "id": 13,
+      "name": "Magic Damage",
+      "packet_index": -1,
+      "order_priority": 2
+    },
+    {
+      "id": 14,
+      "name": "Delay",
+      "packet_index": 11,
+      "order_priority": 52
+    },
+    {
+      "id": 15,
+      "name": "Additional Effect:",
+      "packet_index": -1,
+      "order_priority": 51
+    },
+    {
+      "id": 16,
+      "name": "Attack Speed",
+      "packet_index": -1,
+      "order_priority": 53
+    },
+    {
+      "id": 17,
+      "name": "Block Rate",
+      "packet_index": -1,
+      "order_priority": 3
+    },
+    {
+      "id": 18,
+      "name": "Block Strength",
+      "packet_index": -1,
+      "order_priority": 4
+    },
+    {
+      "id": 19,
+      "name": "Tenacity",
+      "packet_index": 12,
+      "order_priority": 24
+    },
+    {
+      "id": 20,
+      "name": "Attack Power",
+      "packet_index": 13,
+      "order_priority": 7
+    },
+    {
+      "id": 21,
+      "name": "Defense",
+      "packet_index": 14,
+      "order_priority": 5
+    },
+    {
+      "id": 22,
+      "name": "Direct Hit Rate",
+      "packet_index": 15,
+      "order_priority": 23
+    },
+    {
+      "id": 23,
+      "name": "Evasion",
+      "packet_index": 16,
+      "order_priority": 26
+    },
+    {
+      "id": 24,
+      "name": "Magic Defense",
+      "packet_index": 17,
+      "order_priority": 6
+    },
+    {
+      "id": 25,
+      "name": "Critical Hit Power",
+      "packet_index": -1,
+      "order_priority": 27
+    },
+    {
+      "id": 26,
+      "name": "Critical Hit Resilience",
+      "packet_index": -1,
+      "order_priority": 28
+    },
+    {
+      "id": 27,
+      "name": "Critical Hit",
+      "packet_index": 18,
+      "order_priority": 19
+    },
+    {
+      "id": 28,
+      "name": "Critical Hit Evasion",
+      "packet_index": -1,
+      "order_priority": 29
+    },
+    {
+      "id": 29,
+      "name": "Slashing Resistance",
+      "packet_index": -1,
+      "order_priority": 43
+    },
+    {
+      "id": 30,
+      "name": "Piercing Resistance",
+      "packet_index": -1,
+      "order_priority": 44
+    },
+    {
+      "id": 31,
+      "name": "Blunt Resistance",
+      "packet_index": -1,
+      "order_priority": 45
+    },
+    {
+      "id": 32,
+      "name": "Projectile Resistance",
+      "packet_index": -1,
+      "order_priority": 46
+    },
+    {
+      "id": 33,
+      "name": "Attack Magic Potency",
+      "packet_index": 19,
+      "order_priority": 8
+    },
+    {
+      "id": 34,
+      "name": "Healing Magic Potency",
+      "packet_index": 20,
+      "order_priority": 9
+    },
+    {
+      "id": 35,
+      "name": "Enhancement Magic Potency",
+      "packet_index": -1,
+      "order_priority": 10
+    },
+    {
+      "id": 36,
+      "name": "Elemental Bonus",
+      "packet_index": 21,
+      "order_priority": 36
+    },
+    {
+      "id": 37,
+      "name": "Fire Resistance",
+      "packet_index": -1,
+      "order_priority": 37
+    },
+    {
+      "id": 38,
+      "name": "Ice Resistance",
+      "packet_index": -1,
+      "order_priority": 38
+    },
+    {
+      "id": 39,
+      "name": "Wind Resistance",
+      "packet_index": -1,
+      "order_priority": 39
+    },
+    {
+      "id": 40,
+      "name": "Earth Resistance",
+      "packet_index": -1,
+      "order_priority": 40
+    },
+    {
+      "id": 41,
+      "name": "Lightning Resistance",
+      "packet_index": -1,
+      "order_priority": 41
+    },
+    {
+      "id": 42,
+      "name": "Water Resistance",
+      "packet_index": -1,
+      "order_priority": 42
+    },
+    {
+      "id": 43,
+      "name": "Magic Resistance",
+      "packet_index": -1,
+      "order_priority": 47
+    },
+    {
+      "id": 44,
+      "name": "Determination",
+      "packet_index": 22,
+      "order_priority": 20
+    },
+    {
+      "id": 45,
+      "name": "Skill Speed",
+      "packet_index": 23,
+      "order_priority": 21
+    },
+    {
+      "id": 46,
+      "name": "Spell Speed",
+      "packet_index": 24,
+      "order_priority": 22
+    },
+    {
+      "id": 47,
+      "name": "Haste",
+      "packet_index": 25,
+      "order_priority": 17
+    },
+    {
+      "id": 48,
+      "name": "Morale",
+      "packet_index": -1,
+      "order_priority": 73
+    },
+    {
+      "id": 49,
+      "name": "Enmity",
+      "packet_index": -1,
+      "order_priority": 57
+    },
+    {
+      "id": 50,
+      "name": "Enmity Reduction",
+      "packet_index": -1,
+      "order_priority": 58
+    },
+    {
+      "id": 51,
+      "name": "Desynthesis Skill Gain",
+      "packet_index": -1,
+      "order_priority": 55
+    },
+    {
+      "id": 52,
+      "name": "EXP Bonus",
+      "packet_index": -1,
+      "order_priority": 54
+    },
+    {
+      "id": 53,
+      "name": "Regen",
+      "packet_index": -1,
+      "order_priority": 59
+    },
+    {
+      "id": 54,
+      "name": "Special Attribute",
+      "packet_index": -1,
+      "order_priority": 60
+    },
+    {
+      "id": 55,
+      "name": "Main Attribute",
+      "packet_index": -1,
+      "order_priority": 11
+    },
+    {
+      "id": 56,
+      "name": "Secondary Attribute",
+      "packet_index": -1,
+      "order_priority": 18
+    },
+    {
+      "id": 57,
+      "name": "Slow Resistance",
+      "packet_index": -1,
+      "order_priority": 61
+    },
+    {
+      "id": 58,
+      "name": "Petrification Resistance",
+      "packet_index": -1,
+      "order_priority": 62
+    },
+    {
+      "id": 59,
+      "name": "Paralysis Resistance",
+      "packet_index": -1,
+      "order_priority": 63
+    },
+    {
+      "id": 60,
+      "name": "Silence Resistance",
+      "packet_index": -1,
+      "order_priority": 64
+    },
+    {
+      "id": 61,
+      "name": "Blind Resistance",
+      "packet_index": -1,
+      "order_priority": 65
+    },
+    {
+      "id": 62,
+      "name": "Poison Resistance",
+      "packet_index": -1,
+      "order_priority": 66
+    },
+    {
+      "id": 63,
+      "name": "Stun Resistance",
+      "packet_index": -1,
+      "order_priority": 67
+    },
+    {
+      "id": 64,
+      "name": "Sleep Resistance",
+      "packet_index": -1,
+      "order_priority": 68
+    },
+    {
+      "id": 65,
+      "name": "Bind Resistance",
+      "packet_index": -1,
+      "order_priority": 69
+    },
+    {
+      "id": 66,
+      "name": "Heavy Resistance",
+      "packet_index": -1,
+      "order_priority": 70
+    },
+    {
+      "id": 67,
+      "name": "Doom Resistance",
+      "packet_index": -1,
+      "order_priority": 71
+    },
+    {
+      "id": 68,
+      "name": "Reduced Durability Loss",
+      "packet_index": -1,
+      "order_priority": 72
+    },
+    {
+      "id": 69,
+      "name": "Increased Spiritbond Gain",
+      "packet_index": -1,
+      "order_priority": 56
+    },
+    {
+      "id": 70,
+      "name": "Craftsmanship",
+      "packet_index": 26,
+      "order_priority": 30
+    },
+    {
+      "id": 71,
+      "name": "Control",
+      "packet_index": 27,
+      "order_priority": 31
+    },
+    {
+      "id": 72,
+      "name": "Gathering",
+      "packet_index": 28,
+      "order_priority": 33
+    },
+    {
+      "id": 73,
+      "name": "Perception",
+      "packet_index": 29,
+      "order_priority": 34
+    }
+  ]
+}

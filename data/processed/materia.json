@@ -1,0 +1,1027 @@
+{
+  "generated_at_utc": "2026-05-31T19:36:40.706883Z",
+  "tracked_stat_ids": {
+    "gp": 10,
+    "gathering": 72,
+    "perception": 73
+  },
+  "stat_grade_summary": {
+    "gathering": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12
+    ],
+    "perception": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12
+    ],
+    "gp": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12
+    ]
+  },
+  "total_rows": 36,
+  "rows": [
+    {
+      "materia_group_id": 18,
+      "grade": 1,
+      "item_id": 5684,
+      "name": "Gatherer's Guerdon Materia I",
+      "item_level": 15,
+      "stat": "gathering",
+      "stat_id": 72,
+      "value": 3,
+      "overmeld_allowed_slots": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "overmeld_rates_nq": [
+        80,
+        40,
+        20,
+        10
+      ],
+      "overmeld_rates_hq": [
+        90,
+        48,
+        28,
+        16
+      ]
+    },
+    {
+      "materia_group_id": 18,
+      "grade": 2,
+      "item_id": 5685,
+      "name": "Gatherer's Guerdon Materia II",
+      "item_level": 30,
+      "stat": "gathering",
+      "stat_id": 72,
+      "value": 4,
+      "overmeld_allowed_slots": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "overmeld_rates_nq": [
+        72,
+        36,
+        18,
+        10
+      ],
+      "overmeld_rates_hq": [
+        82,
+        44,
+        26,
+        16
+      ]
+    },
+    {
+      "materia_group_id": 18,
+      "grade": 3,
+      "item_id": 5686,
+      "name": "Gatherer's Guerdon Materia III",
+      "item_level": 45,
+      "stat": "gathering",
+      "stat_id": 72,
+      "value": 5,
+      "overmeld_allowed_slots": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "overmeld_rates_nq": [
+        60,
+        30,
+        16,
+        8
+      ],
+      "overmeld_rates_hq": [
+        70,
+        38,
+        22,
+        14
+      ]
+    },
+    {
+      "materia_group_id": 18,
+      "grade": 4,
+      "item_id": 5687,
+      "name": "Gatherer's Guerdon Materia IV",
+      "item_level": 55,
+      "stat": "gathering",
+      "stat_id": 72,
+      "value": 6,
+      "overmeld_allowed_slots": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "overmeld_rates_nq": [
+        48,
+        24,
+        12,
+        6
+      ],
+      "overmeld_rates_hq": [
+        58,
+        32,
+        20,
+        12
+      ]
+    },
+    {
+      "materia_group_id": 18,
+      "grade": 5,
+      "item_id": 5688,
+      "name": "Gatherer's Guerdon Materia V",
+      "item_level": 160,
+      "stat": "gathering",
+      "stat_id": 72,
+      "value": 10,
+      "overmeld_allowed_slots": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "overmeld_rates_nq": [
+        12,
+        6,
+        3,
+        2
+      ],
+      "overmeld_rates_hq": [
+        17,
+        10,
+        7,
+        5
+      ]
+    },
+    {
+      "materia_group_id": 18,
+      "grade": 6,
+      "item_id": 18022,
+      "name": "Gatherer's Guerdon Materia VI",
+      "item_level": 290,
+      "stat": "gathering",
+      "stat_id": 72,
+      "value": 15,
+      "overmeld_allowed_slots": [
+        0
+      ],
+      "overmeld_rates_nq": [
+        12,
+        0,
+        0,
+        0
+      ],
+      "overmeld_rates_hq": [
+        17,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "materia_group_id": 18,
+      "grade": 7,
+      "item_id": 25191,
+      "name": "Gatherer's Guerdon Materia VII",
+      "item_level": 430,
+      "stat": "gathering",
+      "stat_id": 72,
+      "value": 12,
+      "overmeld_allowed_slots": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "overmeld_rates_nq": [
+        12,
+        6,
+        3,
+        2
+      ],
+      "overmeld_rates_hq": [
+        17,
+        10,
+        7,
+        5
+      ]
+    },
+    {
+      "materia_group_id": 18,
+      "grade": 8,
+      "item_id": 26732,
+      "name": "Gatherer's Guerdon Materia VIII",
+      "item_level": 430,
+      "stat": "gathering",
+      "stat_id": 72,
+      "value": 20,
+      "overmeld_allowed_slots": [
+        0
+      ],
+      "overmeld_rates_nq": [
+        12,
+        0,
+        0,
+        0
+      ],
+      "overmeld_rates_hq": [
+        17,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "materia_group_id": 18,
+      "grade": 9,
+      "item_id": 33922,
+      "name": "Gatherer's Guerdon Materia IX",
+      "item_level": 560,
+      "stat": "gathering",
+      "stat_id": 72,
+      "value": 14,
+      "overmeld_allowed_slots": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "overmeld_rates_nq": [
+        12,
+        6,
+        3,
+        2
+      ],
+      "overmeld_rates_hq": [
+        17,
+        10,
+        7,
+        5
+      ]
+    },
+    {
+      "materia_group_id": 18,
+      "grade": 10,
+      "item_id": 33935,
+      "name": "Gatherer's Guerdon Materia X",
+      "item_level": 560,
+      "stat": "gathering",
+      "stat_id": 72,
+      "value": 25,
+      "overmeld_allowed_slots": [
+        0
+      ],
+      "overmeld_rates_nq": [
+        12,
+        0,
+        0,
+        0
+      ],
+      "overmeld_rates_hq": [
+        17,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "materia_group_id": 18,
+      "grade": 11,
+      "item_id": 41762,
+      "name": "Gatherer's Guerdon Materia XI",
+      "item_level": 690,
+      "stat": "gathering",
+      "stat_id": 72,
+      "value": 20,
+      "overmeld_allowed_slots": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "overmeld_rates_nq": [
+        12,
+        6,
+        3,
+        2
+      ],
+      "overmeld_rates_hq": [
+        17,
+        10,
+        7,
+        5
+      ]
+    },
+    {
+      "materia_group_id": 18,
+      "grade": 12,
+      "item_id": 41775,
+      "name": "Gatherer's Guerdon Materia XII",
+      "item_level": 690,
+      "stat": "gathering",
+      "stat_id": 72,
+      "value": 36,
+      "overmeld_allowed_slots": [
+        0
+      ],
+      "overmeld_rates_nq": [
+        12,
+        0,
+        0,
+        0
+      ],
+      "overmeld_rates_hq": [
+        17,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "materia_group_id": 20,
+      "grade": 1,
+      "item_id": 5694,
+      "name": "Gatherer's Grasp Materia I",
+      "item_level": 15,
+      "stat": "gp",
+      "stat_id": 10,
+      "value": 1,
+      "overmeld_allowed_slots": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "overmeld_rates_nq": [
+        80,
+        40,
+        20,
+        10
+      ],
+      "overmeld_rates_hq": [
+        90,
+        48,
+        28,
+        16
+      ]
+    },
+    {
+      "materia_group_id": 20,
+      "grade": 2,
+      "item_id": 5695,
+      "name": "Gatherer's Grasp Materia II",
+      "item_level": 30,
+      "stat": "gp",
+      "stat_id": 10,
+      "value": 2,
+      "overmeld_allowed_slots": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "overmeld_rates_nq": [
+        72,
+        36,
+        18,
+        10
+      ],
+      "overmeld_rates_hq": [
+        82,
+        44,
+        26,
+        16
+      ]
+    },
+    {
+      "materia_group_id": 20,
+      "grade": 3,
+      "item_id": 5696,
+      "name": "Gatherer's Grasp Materia III",
+      "item_level": 45,
+      "stat": "gp",
+      "stat_id": 10,
+      "value": 3,
+      "overmeld_allowed_slots": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "overmeld_rates_nq": [
+        60,
+        30,
+        16,
+        8
+      ],
+      "overmeld_rates_hq": [
+        70,
+        38,
+        22,
+        14
+      ]
+    },
+    {
+      "materia_group_id": 20,
+      "grade": 4,
+      "item_id": 5697,
+      "name": "Gatherer's Grasp Materia IV",
+      "item_level": 55,
+      "stat": "gp",
+      "stat_id": 10,
+      "value": 4,
+      "overmeld_allowed_slots": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "overmeld_rates_nq": [
+        48,
+        24,
+        12,
+        6
+      ],
+      "overmeld_rates_hq": [
+        58,
+        32,
+        20,
+        12
+      ]
+    },
+    {
+      "materia_group_id": 20,
+      "grade": 5,
+      "item_id": 5698,
+      "name": "Gatherer's Grasp Materia V",
+      "item_level": 160,
+      "stat": "gp",
+      "stat_id": 10,
+      "value": 6,
+      "overmeld_allowed_slots": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "overmeld_rates_nq": [
+        12,
+        6,
+        3,
+        2
+      ],
+      "overmeld_rates_hq": [
+        17,
+        10,
+        7,
+        5
+      ]
+    },
+    {
+      "materia_group_id": 20,
+      "grade": 6,
+      "item_id": 18024,
+      "name": "Gatherer's Grasp Materia VI",
+      "item_level": 290,
+      "stat": "gp",
+      "stat_id": 10,
+      "value": 8,
+      "overmeld_allowed_slots": [
+        0
+      ],
+      "overmeld_rates_nq": [
+        12,
+        0,
+        0,
+        0
+      ],
+      "overmeld_rates_hq": [
+        17,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "materia_group_id": 20,
+      "grade": 7,
+      "item_id": 25193,
+      "name": "Gatherer's Grasp Materia VII",
+      "item_level": 430,
+      "stat": "gp",
+      "stat_id": 10,
+      "value": 7,
+      "overmeld_allowed_slots": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "overmeld_rates_nq": [
+        12,
+        6,
+        3,
+        2
+      ],
+      "overmeld_rates_hq": [
+        17,
+        10,
+        7,
+        5
+      ]
+    },
+    {
+      "materia_group_id": 20,
+      "grade": 8,
+      "item_id": 26734,
+      "name": "Gatherer's Grasp Materia VIII",
+      "item_level": 430,
+      "stat": "gp",
+      "stat_id": 10,
+      "value": 9,
+      "overmeld_allowed_slots": [
+        0
+      ],
+      "overmeld_rates_nq": [
+        12,
+        0,
+        0,
+        0
+      ],
+      "overmeld_rates_hq": [
+        17,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "materia_group_id": 20,
+      "grade": 9,
+      "item_id": 33924,
+      "name": "Gatherer's Grasp Materia IX",
+      "item_level": 560,
+      "stat": "gp",
+      "stat_id": 10,
+      "value": 8,
+      "overmeld_allowed_slots": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "overmeld_rates_nq": [
+        12,
+        6,
+        3,
+        2
+      ],
+      "overmeld_rates_hq": [
+        17,
+        10,
+        7,
+        5
+      ]
+    },
+    {
+      "materia_group_id": 20,
+      "grade": 10,
+      "item_id": 33937,
+      "name": "Gatherer's Grasp Materia X",
+      "item_level": 560,
+      "stat": "gp",
+      "stat_id": 10,
+      "value": 10,
+      "overmeld_allowed_slots": [
+        0
+      ],
+      "overmeld_rates_nq": [
+        12,
+        0,
+        0,
+        0
+      ],
+      "overmeld_rates_hq": [
+        17,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "materia_group_id": 20,
+      "grade": 11,
+      "item_id": 41764,
+      "name": "Gatherer's Grasp Materia XI",
+      "item_level": 690,
+      "stat": "gp",
+      "stat_id": 10,
+      "value": 9,
+      "overmeld_allowed_slots": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "overmeld_rates_nq": [
+        12,
+        6,
+        3,
+        2
+      ],
+      "overmeld_rates_hq": [
+        17,
+        10,
+        7,
+        5
+      ]
+    },
+    {
+      "materia_group_id": 20,
+      "grade": 12,
+      "item_id": 41777,
+      "name": "Gatherer's Grasp Materia XII",
+      "item_level": 690,
+      "stat": "gp",
+      "stat_id": 10,
+      "value": 11,
+      "overmeld_allowed_slots": [
+        0
+      ],
+      "overmeld_rates_nq": [
+        12,
+        0,
+        0,
+        0
+      ],
+      "overmeld_rates_hq": [
+        17,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "materia_group_id": 19,
+      "grade": 1,
+      "item_id": 5689,
+      "name": "Gatherer's Guile Materia I",
+      "item_level": 15,
+      "stat": "perception",
+      "stat_id": 73,
+      "value": 3,
+      "overmeld_allowed_slots": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "overmeld_rates_nq": [
+        80,
+        40,
+        20,
+        10
+      ],
+      "overmeld_rates_hq": [
+        90,
+        48,
+        28,
+        16
+      ]
+    },
+    {
+      "materia_group_id": 19,
+      "grade": 2,
+      "item_id": 5690,
+      "name": "Gatherer's Guile Materia II",
+      "item_level": 30,
+      "stat": "perception",
+      "stat_id": 73,
+      "value": 4,
+      "overmeld_allowed_slots": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "overmeld_rates_nq": [
+        72,
+        36,
+        18,
+        10
+      ],
+      "overmeld_rates_hq": [
+        82,
+        44,
+        26,
+        16
+      ]
+    },
+    {
+      "materia_group_id": 19,
+      "grade": 3,
+      "item_id": 5691,
+      "name": "Gatherer's Guile Materia III",
+      "item_level": 45,
+      "stat": "perception",
+      "stat_id": 73,
+      "value": 5,
+      "overmeld_allowed_slots": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "overmeld_rates_nq": [
+        60,
+        30,
+        16,
+        8
+      ],
+      "overmeld_rates_hq": [
+        70,
+        38,
+        22,
+        14
+      ]
+    },
+    {
+      "materia_group_id": 19,
+      "grade": 4,
+      "item_id": 5692,
+      "name": "Gatherer's Guile Materia IV",
+      "item_level": 55,
+      "stat": "perception",
+      "stat_id": 73,
+      "value": 6,
+      "overmeld_allowed_slots": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "overmeld_rates_nq": [
+        48,
+        24,
+        12,
+        6
+      ],
+      "overmeld_rates_hq": [
+        58,
+        32,
+        20,
+        12
+      ]
+    },
+    {
+      "materia_group_id": 19,
+      "grade": 5,
+      "item_id": 5693,
+      "name": "Gatherer's Guile Materia V",
+      "item_level": 160,
+      "stat": "perception",
+      "stat_id": 73,
+      "value": 10,
+      "overmeld_allowed_slots": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "overmeld_rates_nq": [
+        12,
+        6,
+        3,
+        2
+      ],
+      "overmeld_rates_hq": [
+        17,
+        10,
+        7,
+        5
+      ]
+    },
+    {
+      "materia_group_id": 19,
+      "grade": 6,
+      "item_id": 18023,
+      "name": "Gatherer's Guile Materia VI",
+      "item_level": 290,
+      "stat": "perception",
+      "stat_id": 73,
+      "value": 15,
+      "overmeld_allowed_slots": [
+        0
+      ],
+      "overmeld_rates_nq": [
+        12,
+        0,
+        0,
+        0
+      ],
+      "overmeld_rates_hq": [
+        17,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "materia_group_id": 19,
+      "grade": 7,
+      "item_id": 25192,
+      "name": "Gatherer's Guile Materia VII",
+      "item_level": 430,
+      "stat": "perception",
+      "stat_id": 73,
+      "value": 12,
+      "overmeld_allowed_slots": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "overmeld_rates_nq": [
+        12,
+        6,
+        3,
+        2
+      ],
+      "overmeld_rates_hq": [
+        17,
+        10,
+        7,
+        5
+      ]
+    },
+    {
+      "materia_group_id": 19,
+      "grade": 8,
+      "item_id": 26733,
+      "name": "Gatherer's Guile Materia VIII",
+      "item_level": 430,
+      "stat": "perception",
+      "stat_id": 73,
+      "value": 20,
+      "overmeld_allowed_slots": [
+        0
+      ],
+      "overmeld_rates_nq": [
+        12,
+        0,
+        0,
+        0
+      ],
+      "overmeld_rates_hq": [
+        17,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "materia_group_id": 19,
+      "grade": 9,
+      "item_id": 33923,
+      "name": "Gatherer's Guile Materia IX",
+      "item_level": 560,
+      "stat": "perception",
+      "stat_id": 73,
+      "value": 14,
+      "overmeld_allowed_slots": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "overmeld_rates_nq": [
+        12,
+        6,
+        3,
+        2
+      ],
+      "overmeld_rates_hq": [
+        17,
+        10,
+        7,
+        5
+      ]
+    },
+    {
+      "materia_group_id": 19,
+      "grade": 10,
+      "item_id": 33936,
+      "name": "Gatherer's Guile Materia X",
+      "item_level": 560,
+      "stat": "perception",
+      "stat_id": 73,
+      "value": 25,
+      "overmeld_allowed_slots": [
+        0
+      ],
+      "overmeld_rates_nq": [
+        12,
+        0,
+        0,
+        0
+      ],
+      "overmeld_rates_hq": [
+        17,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "materia_group_id": 19,
+      "grade": 11,
+      "item_id": 41763,
+      "name": "Gatherer's Guile Materia XI",
+      "item_level": 690,
+      "stat": "perception",
+      "stat_id": 73,
+      "value": 20,
+      "overmeld_allowed_slots": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "overmeld_rates_nq": [
+        12,
+        6,
+        3,
+        2
+      ],
+      "overmeld_rates_hq": [
+        17,
+        10,
+        7,
+        5
+      ]
+    },
+    {
+      "materia_group_id": 19,
+      "grade": 12,
+      "item_id": 41776,
+      "name": "Gatherer's Guile Materia XII",
+      "item_level": 690,
+      "stat": "perception",
+      "stat_id": 73,
+      "value": 36,
+      "overmeld_allowed_slots": [
+        0
+      ],
+      "overmeld_rates_nq": [
+        12,
+        0,
+        0,
+        0
+      ],
+      "overmeld_rates_hq": [
+        17,
+        0,
+        0,
+        0
+      ]
+    }
+  ]
+}

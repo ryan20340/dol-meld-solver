@@ -1,0 +1,423 @@
+{
+  "generated_at_utc": "2026-05-31T19:36:40.698354Z",
+  "constants": {
+    "max_total_materia_slots_per_piece": 5,
+    "max_overmeld_slots_per_piece": 4
+  },
+  "materia_grade_rules": [
+    {
+      "grade": 1,
+      "normal_meld_chance_percent": 100,
+      "raw_threshold_value": 50,
+      "overmeld_rates_nq": [
+        80,
+        40,
+        20,
+        10
+      ],
+      "overmeld_rates_hq": [
+        90,
+        48,
+        28,
+        16
+      ],
+      "overmeld_allowed_slots": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "join_rate_table": {
+        "overmeld_rates_nq": [
+          80,
+          40,
+          20,
+          10
+        ],
+        "overmeld_rates_hq": [
+          90,
+          48,
+          28,
+          16
+        ]
+      }
+    },
+    {
+      "grade": 2,
+      "normal_meld_chance_percent": 100,
+      "raw_threshold_value": 100,
+      "overmeld_rates_nq": [
+        72,
+        36,
+        18,
+        10
+      ],
+      "overmeld_rates_hq": [
+        82,
+        44,
+        26,
+        16
+      ],
+      "overmeld_allowed_slots": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "join_rate_table": {
+        "overmeld_rates_nq": [
+          72,
+          36,
+          18,
+          10
+        ],
+        "overmeld_rates_hq": [
+          82,
+          44,
+          26,
+          16
+        ]
+      }
+    },
+    {
+      "grade": 3,
+      "normal_meld_chance_percent": 100,
+      "raw_threshold_value": 150,
+      "overmeld_rates_nq": [
+        60,
+        30,
+        16,
+        8
+      ],
+      "overmeld_rates_hq": [
+        70,
+        38,
+        22,
+        14
+      ],
+      "overmeld_allowed_slots": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "join_rate_table": {
+        "overmeld_rates_nq": [
+          60,
+          30,
+          16,
+          8
+        ],
+        "overmeld_rates_hq": [
+          70,
+          38,
+          22,
+          14
+        ]
+      }
+    },
+    {
+      "grade": 4,
+      "normal_meld_chance_percent": 100,
+      "raw_threshold_value": 300,
+      "overmeld_rates_nq": [
+        48,
+        24,
+        12,
+        6
+      ],
+      "overmeld_rates_hq": [
+        58,
+        32,
+        20,
+        12
+      ],
+      "overmeld_allowed_slots": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "join_rate_table": {
+        "overmeld_rates_nq": [
+          48,
+          24,
+          12,
+          6
+        ],
+        "overmeld_rates_hq": [
+          58,
+          32,
+          20,
+          12
+        ]
+      }
+    },
+    {
+      "grade": 5,
+      "normal_meld_chance_percent": 100,
+      "raw_threshold_value": 700,
+      "overmeld_rates_nq": [
+        12,
+        6,
+        3,
+        2
+      ],
+      "overmeld_rates_hq": [
+        17,
+        10,
+        7,
+        5
+      ],
+      "overmeld_allowed_slots": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "join_rate_table": {
+        "overmeld_rates_nq": [
+          12,
+          6,
+          3,
+          2
+        ],
+        "overmeld_rates_hq": [
+          17,
+          10,
+          7,
+          5
+        ]
+      }
+    },
+    {
+      "grade": 6,
+      "normal_meld_chance_percent": 100,
+      "raw_threshold_value": 1200,
+      "overmeld_rates_nq": [
+        12,
+        0,
+        0,
+        0
+      ],
+      "overmeld_rates_hq": [
+        17,
+        0,
+        0,
+        0
+      ],
+      "overmeld_allowed_slots": [
+        0
+      ],
+      "join_rate_table": {
+        "overmeld_rates_nq": [
+          12,
+          0,
+          0,
+          0
+        ],
+        "overmeld_rates_hq": [
+          17,
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "grade": 7,
+      "normal_meld_chance_percent": 100,
+      "raw_threshold_value": 1400,
+      "overmeld_rates_nq": [
+        12,
+        6,
+        3,
+        2
+      ],
+      "overmeld_rates_hq": [
+        17,
+        10,
+        7,
+        5
+      ],
+      "overmeld_allowed_slots": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "join_rate_table": {
+        "overmeld_rates_nq": [
+          12,
+          6,
+          3,
+          2
+        ],
+        "overmeld_rates_hq": [
+          17,
+          10,
+          7,
+          5
+        ]
+      }
+    },
+    {
+      "grade": 8,
+      "normal_meld_chance_percent": 100,
+      "raw_threshold_value": 1600,
+      "overmeld_rates_nq": [
+        12,
+        0,
+        0,
+        0
+      ],
+      "overmeld_rates_hq": [
+        17,
+        0,
+        0,
+        0
+      ],
+      "overmeld_allowed_slots": [
+        0
+      ],
+      "join_rate_table": {
+        "overmeld_rates_nq": [
+          12,
+          0,
+          0,
+          0
+        ],
+        "overmeld_rates_hq": [
+          17,
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "grade": 9,
+      "normal_meld_chance_percent": 100,
+      "raw_threshold_value": 1700,
+      "overmeld_rates_nq": [
+        12,
+        6,
+        3,
+        2
+      ],
+      "overmeld_rates_hq": [
+        17,
+        10,
+        7,
+        5
+      ],
+      "overmeld_allowed_slots": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "join_rate_table": {
+        "overmeld_rates_nq": [
+          12,
+          6,
+          3,
+          2
+        ],
+        "overmeld_rates_hq": [
+          17,
+          10,
+          7,
+          5
+        ]
+      }
+    },
+    {
+      "grade": 10,
+      "normal_meld_chance_percent": 100,
+      "raw_threshold_value": 1800,
+      "overmeld_rates_nq": [
+        12,
+        0,
+        0,
+        0
+      ],
+      "overmeld_rates_hq": [
+        17,
+        0,
+        0,
+        0
+      ],
+      "overmeld_allowed_slots": [
+        0
+      ],
+      "join_rate_table": {
+        "overmeld_rates_nq": [
+          12,
+          0,
+          0,
+          0
+        ],
+        "overmeld_rates_hq": [
+          17,
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "grade": 11,
+      "normal_meld_chance_percent": 80,
+      "raw_threshold_value": 1900,
+      "overmeld_rates_nq": [
+        12,
+        6,
+        3,
+        2
+      ],
+      "overmeld_rates_hq": [
+        17,
+        10,
+        7,
+        5
+      ],
+      "overmeld_allowed_slots": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "grade": 12,
+      "normal_meld_chance_percent": 40,
+      "raw_threshold_value": 2000,
+      "overmeld_rates_nq": [
+        12,
+        0,
+        0,
+        0
+      ],
+      "overmeld_rates_hq": [
+        17,
+        0,
+        0,
+        0
+      ],
+      "overmeld_allowed_slots": [
+        0
+      ]
+    }
+  ],
+  "grade_overmeld_patterns": {
+    "first_overmeld_only_grades": [
+      6,
+      8,
+      10,
+      12
+    ],
+    "overmeld_forbidden_grades": []
+  },
+  "join_rate_sheet_used": "MateriaJoinRateGatherCraft.csv"
+}
