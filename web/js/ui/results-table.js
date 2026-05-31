@@ -6,6 +6,13 @@ const STAT_DISPLAY = Object.freeze({
   perception: "Perception",
   gp: "GP",
 });
+const ADVANCED_STAT_DUMP_OPTIONS = Object.freeze({
+  none: "None",
+  gathering: "Gathering",
+  perception: "Perception",
+  gp: "GP",
+  even: "Evenly Distributed",
+});
 const GRADE_ROMAN = Object.freeze(["", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"]);
 const SLOT_DISPLAY = Object.freeze({
   main_hand: "Main Hand",
@@ -39,6 +46,13 @@ function normalizeNonNegativeInteger(value) {
     return 0;
   }
   return Math.floor(parsed);
+}
+
+function hasAnyTargets(targets) {
+  const gathering = normalizeNonNegativeInteger(targets?.gathering);
+  const perception = normalizeNonNegativeInteger(targets?.perception);
+  const gp = normalizeNonNegativeInteger(targets?.gp);
+  return gathering + perception + gp > 0;
 }
 
 function buildItemIconHtml(iconId, label, className = "item-icon", options = {}) {
@@ -184,7 +198,7 @@ function signedDeltaLabel(value) {
   return safe >= 0 ? `+${safe}` : String(safe);
 }
 
-function highestPriorityBreakpointTargetsByStat(profile) {
+function highestBreakpointTargetsByStat(profile) {
   const rows = Array.isArray(profile?.breakpointResults) ? profile.breakpointResults : [];
   const targets = {
     gathering: 0,
@@ -193,29 +207,9 @@ function highestPriorityBreakpointTargetsByStat(profile) {
   };
 
   for (const stat of STAT_KEYS) {
-    const statRows = rows.filter((row) => String(row?.stat ?? "") === stat);
-    if (statRows.length === 0) {
-      continue;
-    }
-
-    let bestPriority = Number.NEGATIVE_INFINITY;
-    for (const row of statRows) {
-      const priority = normalizeOptionalPriority(row?.priority);
-      const priorityRank = priority == null ? Number.NEGATIVE_INFINITY : Number(priority);
-      if (priorityRank > bestPriority) {
-        bestPriority = priorityRank;
-      }
-    }
-
-    const bestRows = statRows.filter((row) => {
-      const priority = normalizeOptionalPriority(row?.priority);
-      const priorityRank = priority == null ? Number.NEGATIVE_INFINITY : Number(priority);
-      return priorityRank === bestPriority;
-    });
-    targets[stat] = bestRows.reduce(
-      (maxValue, row) => Math.max(maxValue, normalizeNonNegativeInteger(row?.value)),
-      0,
-    );
+    targets[stat] = rows
+      .filter((row) => String(row?.stat ?? "") === stat)
+      .reduce((maxValue, row) => Math.max(maxValue, normalizeNonNegativeInteger(row?.value)), 0);
   }
   return targets;
 }
@@ -227,7 +221,7 @@ function buildExcessStatLine(profile) {
     perception: normalizeNonNegativeInteger(profile?.totals?.perception),
     gp: normalizeNonNegativeInteger(profile?.totals?.gp),
   };
-  const highestTargets = highestPriorityBreakpointTargetsByStat(profile);
+  const highestTargets = highestBreakpointTargetsByStat(profile);
   const excess = {
     gathering: totals.gathering - highestTargets.gathering,
     perception: totals.perception - highestTargets.perception,
@@ -241,6 +235,7 @@ function buildAdvancedProfileSummary(profile) {
   const food = profile?.food;
   const foodQuality = food?.useHq ? "HQ" : "NQ";
   const foodLabel = food ? `${food.name} [${foodQuality}]` : "No food";
+  const dumpLabel = statDumpLabel(profile?.statDump);
   const totals = {
     gathering: normalizeNonNegativeInteger(profile?.totals?.gathering),
     perception: normalizeNonNegativeInteger(profile?.totals?.perception),
@@ -268,7 +263,7 @@ function buildAdvancedProfileSummary(profile) {
 
   return `
     <div class="advanced-profile-result">
-      <p><strong>${escapeHtml(profile?.profileName ?? "Profile")}</strong> | Breakpoints ${normalizeNonNegativeInteger(profile?.breakpointsMet)}/${normalizeNonNegativeInteger(profile?.enabledBreakpoints)} | Food ${escapeHtml(foodLabel)} | Totals G ${totals.gathering} P ${totals.perception} GP ${totals.gp}</p>
+      <p><strong>${escapeHtml(profile?.profileName ?? "Profile")}</strong> | Breakpoints ${normalizeNonNegativeInteger(profile?.breakpointsMet)}/${normalizeNonNegativeInteger(profile?.enabledBreakpoints)} | Dump ${escapeHtml(dumpLabel)} | Food ${escapeHtml(foodLabel)} | Totals G ${totals.gathering} P ${totals.perception} GP ${totals.gp}</p>
       <ul class="advanced-breakpoint-list">
         ${breakpointHtml}
       </ul>
@@ -319,6 +314,7 @@ function normalizeAdvancedProfile(raw, index = 0) {
     name: String(raw?.name ?? `Profile ${index + 1}`),
     enabled: raw?.enabled !== false,
     useHq: raw?.useHq !== false,
+    statDump: normalizeAdvancedStatDump(raw?.statDump),
     allowedFoodIds: Array.isArray(raw?.allowedFoodIds)
       ? raw.allowedFoodIds.map((value) => normalizeNonNegativeInteger(value)).filter((value) => value > 0)
       : [],
@@ -526,6 +522,13 @@ function buildAdvancedConfigPanel(state) {
           aria-label="Copy active profile"
         >&#x29C9;</button>
         <button type="button" data-action="advanced-preset-load-75" title="Load current advanced preset">7.5 Preset</button>
+        <button
+          type="button"
+          data-action="advanced-profile-remove"
+          data-profile-index="${activeProfileIndex}"
+          title="Delete active profile"
+          ${canDeleteProfile ? "" : "disabled"}
+        >Delete Profile</button>
       </div>
     </div>
     <div class="advanced-profile-tabs">
@@ -554,31 +557,38 @@ function buildAdvancedConfigPanel(state) {
               maxlength="120"
             >
           </div>
-          <label class="checkbox-row">
-            <input
-              type="checkbox"
-              data-action="advanced-profile-enabled"
+          <div class="advanced-profile-toggle-row">
+            <label class="checkbox-row advanced-profile-toggle">
+              <input
+                type="checkbox"
+                data-action="advanced-profile-enabled"
+                data-profile-index="${activeProfileIndex}"
+                ${activeProfile?.enabled !== false ? "checked" : ""}
+              >
+              <span>Use this profile in solve ranking</span>
+            </label>
+            <label class="checkbox-row advanced-profile-toggle">
+              <input
+                type="checkbox"
+                data-advanced-profile-hq="1"
+                data-profile-index="${activeProfileIndex}"
+                ${activeProfile?.useHq !== false ? "checked" : ""}
+              >
+              <span>Use HQ values for this profile</span>
+            </label>
+          </div>
+          <div class="input-row input-row-wide">
+            <label>Stat Dump</label>
+            <select
+              data-advanced-profile-stat-dump="1"
               data-profile-index="${activeProfileIndex}"
-              ${activeProfile?.enabled !== false ? "checked" : ""}
             >
-            <span>Use this profile in solve ranking</span>
-          </label>
-          <label class="checkbox-row">
-            <input
-              type="checkbox"
-              data-advanced-profile-hq="1"
-              data-profile-index="${activeProfileIndex}"
-              ${activeProfile?.useHq !== false ? "checked" : ""}
-            >
-            <span>Use HQ values for this profile</span>
-          </label>
-          <div class="button-row">
-            <button
-              type="button"
-              data-action="advanced-profile-remove"
-              data-profile-index="${activeProfileIndex}"
-              ${canDeleteProfile ? "" : "disabled"}
-            >Delete Profile</button>
+              <option value="none" ${activeProfile?.statDump === "none" ? "selected" : ""}>None</option>
+              <option value="gathering" ${activeProfile?.statDump === "gathering" ? "selected" : ""}>Gathering</option>
+              <option value="perception" ${activeProfile?.statDump === "perception" ? "selected" : ""}>Perception</option>
+              <option value="gp" ${activeProfile?.statDump === "gp" ? "selected" : ""}>GP</option>
+              <option value="even" ${activeProfile?.statDump === "even" ? "selected" : ""}>Evenly Distributed</option>
+            </select>
           </div>
         </div>
         ${buildAdvancedBreakpointEditor(activeProfile, activeProfileIndex)}
@@ -1138,6 +1148,38 @@ function buildSavedPlansPanelHtml(state) {
   `;
 }
 
+function normalizeAdvancedStatDump(value) {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(ADVANCED_STAT_DUMP_OPTIONS, raw)) {
+    return raw;
+  }
+  return "none";
+}
+
+function statDumpLabel(statDump) {
+  const mode = normalizeAdvancedStatDump(statDump);
+  return ADVANCED_STAT_DUMP_OPTIONS[mode] ?? ADVANCED_STAT_DUMP_OPTIONS.none;
+}
+
+function variantFoodLabel(food) {
+  const itemId = normalizeNonNegativeInteger(food?.itemId);
+  if (itemId <= 0) {
+    return "No food";
+  }
+  const name = String(food?.name ?? `Food ${itemId}`);
+  const quality = food?.useHq ? "HQ" : "NQ";
+  return `${name} [${quality}]`;
+}
+
+function variantTotalsLabel(plan, row) {
+  const totals = {
+    gathering: normalizeNonNegativeInteger(plan?.totalGathering ?? row?.totalGathering),
+    perception: normalizeNonNegativeInteger(plan?.totalPerception ?? row?.totalPerception),
+    gp: normalizeNonNegativeInteger(plan?.totalGp ?? row?.totalGp),
+  };
+  return `G ${totals.gathering} / P ${totals.perception} / GP ${totals.gp}`;
+}
+
 function buildPlansRows(row, resultIndex, state, iconContext = {}) {
   const plans = Array.isArray(row?.plans) ? row.plans : [];
   if (plans.length === 0) {
@@ -1152,12 +1194,7 @@ function buildPlansRows(row, resultIndex, state, iconContext = {}) {
       : [];
     const changedPieceIndexSet = new Set(changedPieceIndices.map((value) => normalizeNonNegativeInteger(value)));
     const canToggleDiff = Boolean(plan?.adjustmentDiff);
-    const varianceScore = normalizeNonNegativeInteger(plan?.varianceScore);
-    const varianceLabel =
-      planIndex > 0 && plans.length > 1 ? ` (variance ${varianceScore})` : "";
-    const label = plans.length > 1
-      ? `Plan ${resultIndex + 1} - variant ${planIndex + 1}${varianceLabel}`
-      : `Plan ${resultIndex + 1}`;
+    const label = `Variant ${planIndex + 1} (${variantTotalsLabel(plan, row)} | ${variantFoodLabel(plan?.food ?? row?.food)})`;
     const diffButton = canToggleDiff
       ? `<button type="button" data-action="result-plan-toggle-diff" data-result-index="${resultIndex}" data-plan-index="${planIndex}">${diffEnabled ? "Hide Diff Highlight" : "Show Diff Highlight"}</button>`
       : "";
@@ -1374,6 +1411,15 @@ function wireEvents(resultsPanelElement, handlers) {
     });
   });
 
+  resultsPanelElement.querySelectorAll("select[data-advanced-profile-stat-dump]").forEach((select) => {
+    select.addEventListener("change", (event) => {
+      handlers?.onAdvancedProfileStatDumpChange?.({
+        profileIndex: normalizeNonNegativeInteger(event.currentTarget.getAttribute("data-profile-index")),
+        statDump: event.currentTarget.value,
+      });
+    });
+  });
+
   resultsPanelElement.querySelectorAll("input[data-advanced-breakpoint-enabled]").forEach((input) => {
     input.addEventListener("change", (event) => {
       handlers?.onAdvancedBreakpointFieldChange?.({
@@ -1400,6 +1446,7 @@ function wireEvents(resultsPanelElement, handlers) {
 export function renderResultsTable(resultsPanelElement, state, handlers = {}) {
   const rows = Array.isArray(state.results) ? state.results : [];
   const targets = state?.targets ?? {};
+  const targetsActive = hasAnyTargets(targets);
   const advancedEnabled = state?.advanced?.enabled === true;
   const iconContext = buildRenderIconContext(state);
 
@@ -1419,15 +1466,23 @@ export function renderResultsTable(resultsPanelElement, state, handlers = {}) {
                 }</td>
                 <td>
                   ${
-                    advancedEnabled
-                      ? buildAdvancedCell(row)
-                      : `
-                        <div class="plan-hit ${row?.meetsTargets ? "hit" : "miss"}">
-                          ${row?.meetsTargets ? "Meets Target" : "Below Target"}
-                        </div>
-                        ${buildTotalsCell(row, targets)}
-                      `
-                  }
+	                  advancedEnabled
+	                    ? buildAdvancedCell(row)
+	                    : `
+	                        <div class="plan-hit ${
+                            !targetsActive ? "muted" : row?.meetsTargets ? "hit" : "miss"
+                          }">
+	                          ${
+                              !targetsActive
+                                ? "No Target Set"
+                                : row?.meetsTargets
+                                  ? "Meets Target"
+                                  : "Below Target"
+                            }
+	                        </div>
+	                        ${buildTotalsCell(row, targets)}
+	                      `
+	                  }
                 </td>
               </tr>
               <tr class="plans-row">

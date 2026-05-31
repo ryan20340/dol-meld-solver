@@ -294,6 +294,18 @@
   gap: 6px;
 }
 
+.advanced-profile-toggle-row {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.advanced-profile-toggle {
+  margin-top: 0;
+  flex: 1 1 280px;
+}
+
 .advanced-main-panel {
   margin: 12px 0;
 }

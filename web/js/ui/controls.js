@@ -11,6 +11,8 @@ const FOOD_STAT_SHORT_LABELS = Object.freeze({
 const IMAGE_PLACEHOLDER_SRC =
   "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 const INITIAL_DROPDOWN_PRELOAD_COUNT = 12;
+const NORMAL_MODE_MAX_RESULTS_LIMIT = 25;
+const ADVANCED_MODE_MAX_RESULTS_LIMIT = 10;
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -21,19 +23,16 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
-function foodQualityLabel(foodState, row) {
-  if (!foodState.useHq || !row?.can_be_hq) {
-    return "NQ";
-  }
-  return "HQ";
-}
-
 function normalizeNonNegativeInteger(value, fallback = 0) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < 0) {
     return fallback;
   }
   return Math.floor(parsed);
+}
+
+function maxResultsLimitForAdvancedEnabled(advancedEnabled) {
+  return advancedEnabled ? ADVANCED_MODE_MAX_RESULTS_LIMIT : NORMAL_MODE_MAX_RESULTS_LIMIT;
 }
 
 function selectedGearTotals(state) {
@@ -208,14 +207,12 @@ function buildFoodDropdownEntries(state) {
   const selectedFoodId = Number(state?.food?.selectedFoodId);
   const entries = foodRows.map((row) => {
     const itemId = Number(row?.item_id) || 0;
-    const quality = foodQualityLabel(state.food, row);
-    const useHqVariant = quality === "HQ";
+    const useHqVariant = Boolean(state?.food?.useHq && row?.can_be_hq);
     const summary = summarizeFoodEffects(row, useHqVariant);
     const iconUrl = iconUrlFromRow(row, { useHqVariant });
     return {
       value: itemId,
       label: row?.name ?? `Food ${itemId}`,
-      quality,
       summary,
       iconUrl,
     };
@@ -224,7 +221,6 @@ function buildFoodDropdownEntries(state) {
   entries.unshift({
     value: 0,
     label: "None",
-    quality: "NQ",
     summary: "No food",
     iconUrl: "",
   });
@@ -256,7 +252,6 @@ function buildFoodDropdownOptionHtml(option, selected = false, disabled = false)
         ${iconHtml}
         <span>${escapeHtml(option?.label ?? "Food")}</span>
       </span>
-      <span class="icon-dropdown-quality">${escapeHtml(option?.quality ?? "NQ")}</span>
     </button>
   `;
 }
@@ -278,7 +273,6 @@ function buildFoodDropdownHtml(state, disabled = false) {
           ${selectedIconHtml}
           <span class="icon-dropdown-trigger-label">${escapeHtml(selectedEntry?.label ?? "None")}${escapeHtml(selectedSummary)}</span>
         </span>
-        <span class="icon-dropdown-quality">${escapeHtml(selectedEntry?.quality ?? "NQ")}</span>
         <span class="icon-dropdown-caret" aria-hidden="true">&#9662;</span>
       </button>
       <div class="icon-dropdown-menu" role="listbox" aria-label="Food options">
@@ -477,7 +471,6 @@ function wireSolveHandlers(container, handlers) {
 }
 
 export function renderControlsPanel(container, state, handlers = {}) {
-  const maxResults = state.solve.maxResults;
   const timeBudgetSeconds = Math.round(state.solve.timeBudgetMs / 1000);
   const solveDiagnostics = state.solveDiagnostics;
   const visitedBranches = solveDiagnostics?.visitedBranches ?? 0;
@@ -495,6 +488,19 @@ export function renderControlsPanel(container, state, handlers = {}) {
   const pendingTargetChanges = hasPendingTargetChanges(state);
   const draftTargets = state?.draftTargets ?? state?.targets ?? {};
   const advancedEnabled = state?.advanced?.enabled === true;
+  const maxResultsLimit = maxResultsLimitForAdvancedEnabled(advancedEnabled);
+  const maxResults = Math.min(
+    maxResultsLimit,
+    Math.max(1, normalizeNonNegativeInteger(state?.solve?.maxResults, maxResultsLimit)),
+  );
+  const timeBudgetInputHtml = advancedEnabled
+    ? ""
+    : `
+        <div class="input-row">
+          <label for="solve-budget">Time Budget (s)</label>
+          <input id="solve-budget" type="number" min="1" value="${timeBudgetSeconds}">
+        </div>
+      `;
 
   const standardTargetAndFoodHtml = advancedEnabled
     ? ""
@@ -568,15 +574,12 @@ export function renderControlsPanel(container, state, handlers = {}) {
         </div>
         <div class="input-row">
           <label for="solve-max-results">Max Results</label>
-          <input id="solve-max-results" type="number" min="1" value="${maxResults}">
+          <input id="solve-max-results" type="number" min="1" max="${maxResultsLimit}" value="${maxResults}">
         </div>
-        <div class="input-row">
-          <label for="solve-budget">Time Budget (s)</label>
-          <input id="solve-budget" type="number" min="1" value="${timeBudgetSeconds}">
-        </div>
+        ${timeBudgetInputHtml}
         <label class="checkbox-row" for="solve-bruteforce">
           <input id="solve-bruteforce" type="checkbox" ${bruteForceChecked}>
-          <span>Brute force mode (thorough — no time limit)</span>
+          <span>Brute force mode (Recommended for Advanced Mode)</span>
         </label>
         <p class="muted">Visited branches: ${visitedBranches} | Early-stop: ${terminatedEarly} | Time-stop: ${terminatedByTime}</p>
         <p class="muted">Prunes: target ${targetPrunes}, score ${scorePrunes} | Solve time: ${elapsedMs}ms</p>

@@ -1,7 +1,11 @@
 import { loadProcessedData, summarizeProcessedData } from "./data-loader.js";
 import { createInitialState } from "./state.js";
-import { buildAutoSelectedGearSet, solveLegalityOnly } from "./solver/engine.js";
+import { buildAutoSelectedGearSet } from "./solver/engine.js";
+import { ADVANCED_FRONTIER_RESULT_LIMIT, buildAdvancedSolveInput } from "./solver/advanced-mode-solver.js";
+import { buildNormalSolveInput } from "./solver/normal-mode-solver.js";
 import { scoreCandidate } from "./solver/score.js";
+import { solveByMode } from "./solver/solve-dispatch.js";
+import { isAdvancedSolverMode, SOLVER_MODES } from "./solver/solver-modes.js";
 import { renderControlsPanel } from "./ui/controls.js";
 import { renderGearEditor } from "./ui/gear-editor.js";
 import { renderResultsTable } from "./ui/results-table.js";
@@ -48,6 +52,21 @@ const ADVANCED_CONFIG_STORAGE_KEY = "dol-meld-solver-advanced-config-v1";
 const GEARSET_STORAGE_KEY = "dol-meld-solver-gearset-v1";
 const ADVANCED_PRESET_75_URL = new URL("./presets/current-advanced-preset.json", import.meta.url);
 const UNNUMBERED_PRIORITY_KEY = "__unnumbered__";
+const ADVANCED_STAT_DUMP = Object.freeze({
+  NONE: "none",
+  GATHERING: "gathering",
+  PERCEPTION: "perception",
+  GP: "gp",
+  EVEN: "even",
+});
+const ADVANCED_STAT_DUMP_MODES = new Set(Object.values(ADVANCED_STAT_DUMP));
+const ADVANCED_FRONTIER_GROWTH_FACTOR = 2;
+const ADVANCED_FRONTIER_HARD_CAP = 96000;
+const ADVANCED_FRONTIER_MAX_WIDEN_ATTEMPTS = 3;
+const ADVANCED_FRONTIER_WALLTIME_GUARD_MULTIPLIER = 1.6;
+const NORMAL_MODE_MAX_RESULTS_LIMIT = 25;
+const ADVANCED_MODE_MAX_RESULTS_LIMIT = 10;
+const ADVANCED_MODE_VARIANT_LIMIT = 5;
 
 function createDefaultBreakpoint(index = 1) {
   const safeIndex = Math.max(1, normalizeNonNegativeInteger(index, 1));
@@ -68,6 +87,7 @@ function createDefaultProfile(index = 1) {
     name: `Profile ${safeIndex}`,
     enabled: true,
     useHq: true,
+    statDump: ADVANCED_STAT_DUMP.NONE,
     allowedFoodIds: [],
     breakpoints: [],
   };
@@ -283,6 +303,17 @@ function normalizeOptionalPriority(value) {
   return Math.floor(parsed);
 }
 
+function normalizeAdvancedStatDump(value, fallback = ADVANCED_STAT_DUMP.NONE) {
+  const normalizedFallback = ADVANCED_STAT_DUMP_MODES.has(String(fallback ?? "").trim().toLowerCase())
+    ? String(fallback).trim().toLowerCase()
+    : ADVANCED_STAT_DUMP.NONE;
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (ADVANCED_STAT_DUMP_MODES.has(raw)) {
+    return raw;
+  }
+  return normalizedFallback;
+}
+
 function slotLabel(slotKey) {
   return SLOT_LABELS[String(slotKey ?? "")] ?? String(slotKey ?? "Unknown slot");
 }
@@ -382,6 +413,7 @@ function normalizeAdvancedProfile(raw, fallbackIndex = 1, options = {}) {
     name: String(raw?.name ?? fallback.name).trim() || fallback.name,
     enabled: raw?.enabled !== false,
     useHq: raw?.useHq !== false,
+    statDump: normalizeAdvancedStatDump(raw?.statDump, fallback.statDump),
     allowedFoodIds,
     breakpoints: rawBreakpoints.map((bp, idx) => normalizeBreakpoint(bp, idx + 1)),
   };
@@ -594,6 +626,7 @@ async function applyAdvancedPreset75() {
         keepEmptyFoodSelection: true,
       },
     );
+    applySolveDefaultsForMode(resolveSolveMode());
     state.savedPlansUi.breakpointCheckViewPlanId = null;
     markAdvancedDirty();
   } catch (error) {
@@ -923,6 +956,160 @@ function allowedFoodRowsForProfile(profile) {
   return rows.filter((row) => allowedIds.has(normalizeNonNegativeInteger(row?.item_id, 0)));
 }
 
+function highestBreakpointTargetsByStat(profile, breakpoints = null) {
+  const targets = {
+    gathering: 0,
+    perception: 0,
+    gp: 0,
+  };
+  const rows = Array.isArray(breakpoints) ? breakpoints : enabledBreakpoints(profile);
+  for (const breakpoint of rows) {
+    const stat = String(breakpoint?.stat ?? "");
+    if (!STAT_KEYS.includes(stat)) {
+      continue;
+    }
+    targets[stat] = Math.max(targets[stat], normalizeNonNegativeInteger(breakpoint?.value, 0));
+  }
+  return targets;
+}
+
+function computeStatDumpSurplus(updatedTotals, breakpointTargets) {
+  const gathering = Math.max(
+    0,
+    normalizeNonNegativeInteger(updatedTotals?.gathering, 0) -
+      normalizeNonNegativeInteger(breakpointTargets?.gathering, 0),
+  );
+  const perception = Math.max(
+    0,
+    normalizeNonNegativeInteger(updatedTotals?.perception, 0) -
+      normalizeNonNegativeInteger(breakpointTargets?.perception, 0),
+  );
+  const gp = Math.max(
+    0,
+    normalizeNonNegativeInteger(updatedTotals?.gp, 0) -
+      normalizeNonNegativeInteger(breakpointTargets?.gp, 0),
+  );
+  const total = gathering + perception + gp;
+  const min = Math.min(gathering, perception, gp);
+  const max = Math.max(gathering, perception, gp);
+  const spread = max - min;
+  return {
+    gathering,
+    perception,
+    gp,
+    total,
+    min,
+    max,
+    spread,
+  };
+}
+
+function statDumpPreferenceScore(statDump, surplus) {
+  const mode = normalizeAdvancedStatDump(statDump, ADVANCED_STAT_DUMP.NONE);
+  const safe = {
+    gathering: normalizeNonNegativeInteger(surplus?.gathering, 0),
+    perception: normalizeNonNegativeInteger(surplus?.perception, 0),
+    gp: normalizeNonNegativeInteger(surplus?.gp, 0),
+    total: normalizeNonNegativeInteger(surplus?.total, 0),
+    min: normalizeNonNegativeInteger(surplus?.min, 0),
+    spread: normalizeNonNegativeInteger(surplus?.spread, 0),
+  };
+  if (mode === ADVANCED_STAT_DUMP.GATHERING) {
+    return safe.gathering * 1_000_000 + safe.total * 1_000 + safe.min;
+  }
+  if (mode === ADVANCED_STAT_DUMP.PERCEPTION) {
+    return safe.perception * 1_000_000 + safe.total * 1_000 + safe.min;
+  }
+  if (mode === ADVANCED_STAT_DUMP.GP) {
+    return safe.gp * 1_000_000 + safe.total * 1_000 + safe.min;
+  }
+  if (mode === ADVANCED_STAT_DUMP.NONE) {
+    return 0;
+  }
+  return safe.min * 1_000_000 - safe.spread * 1_000 + safe.total;
+}
+
+function compareStatDumpPreference(leftOption, rightOption, statDump) {
+  const mode = normalizeAdvancedStatDump(statDump, ADVANCED_STAT_DUMP.NONE);
+  if (mode === ADVANCED_STAT_DUMP.NONE) {
+    return 0;
+  }
+  const leftSurplus = leftOption?.statDumpSurplus ?? {};
+  const rightSurplus = rightOption?.statDumpSurplus ?? {};
+  const scoreDiff =
+    (Number(rightOption?.statDumpPreferenceScore) || 0) -
+    (Number(leftOption?.statDumpPreferenceScore) || 0);
+  if (scoreDiff !== 0) {
+    return scoreDiff;
+  }
+
+  if (mode === ADVANCED_STAT_DUMP.GATHERING) {
+    const targetDiff = (Number(rightSurplus?.gathering) || 0) - (Number(leftSurplus?.gathering) || 0);
+    if (targetDiff !== 0) {
+      return targetDiff;
+    }
+  } else if (mode === ADVANCED_STAT_DUMP.PERCEPTION) {
+    const targetDiff = (Number(rightSurplus?.perception) || 0) - (Number(leftSurplus?.perception) || 0);
+    if (targetDiff !== 0) {
+      return targetDiff;
+    }
+  } else if (mode === ADVANCED_STAT_DUMP.GP) {
+    const targetDiff = (Number(rightSurplus?.gp) || 0) - (Number(leftSurplus?.gp) || 0);
+    if (targetDiff !== 0) {
+      return targetDiff;
+    }
+  } else {
+    const minDiff = (Number(rightSurplus?.min) || 0) - (Number(leftSurplus?.min) || 0);
+    if (minDiff !== 0) {
+      return minDiff;
+    }
+    const spreadDiff = (Number(leftSurplus?.spread) || 0) - (Number(rightSurplus?.spread) || 0);
+    if (spreadDiff !== 0) {
+      return spreadDiff;
+    }
+  }
+
+  return (Number(rightSurplus?.total) || 0) - (Number(leftSurplus?.total) || 0);
+}
+
+function compareProfileFoodOptions(left, right, profile) {
+  const priorityDiff = comparePriorityLedgers(left?.priorityLedger, right?.priorityLedger);
+  if (priorityDiff !== 0) {
+    return priorityDiff;
+  }
+  const hitDiff = (Number(right?.hitCount) || 0) - (Number(left?.hitCount) || 0);
+  if (hitDiff !== 0) {
+    return hitDiff;
+  }
+  const dumpDiff = compareStatDumpPreference(left, right, profile?.statDump);
+  if (dumpDiff !== 0) {
+    return dumpDiff;
+  }
+  const sumDiff = (Number(right?.statSum) || 0) - (Number(left?.statSum) || 0);
+  if (sumDiff !== 0) {
+    return sumDiff;
+  }
+  const gatheringDiff =
+    normalizeNonNegativeInteger(right?.updatedTotals?.gathering, 0) -
+    normalizeNonNegativeInteger(left?.updatedTotals?.gathering, 0);
+  if (gatheringDiff !== 0) {
+    return gatheringDiff;
+  }
+  const perceptionDiff =
+    normalizeNonNegativeInteger(right?.updatedTotals?.perception, 0) -
+    normalizeNonNegativeInteger(left?.updatedTotals?.perception, 0);
+  if (perceptionDiff !== 0) {
+    return perceptionDiff;
+  }
+  const gpDiff =
+    normalizeNonNegativeInteger(right?.updatedTotals?.gp, 0) -
+    normalizeNonNegativeInteger(left?.updatedTotals?.gp, 0);
+  if (gpDiff !== 0) {
+    return gpDiff;
+  }
+  return normalizeNonNegativeInteger(left?.food?.itemId, 0) - normalizeNonNegativeInteger(right?.food?.itemId, 0);
+}
+
 function buildProfileFoodOption(baseTotals, profile, foodRow) {
   const useHq = Boolean(profile?.useHq && foodRow?.can_be_hq);
   const delta = computeFoodDeltaForTotals(baseTotals, foodRow, useHq);
@@ -932,11 +1119,14 @@ function buildProfileFoodOption(baseTotals, profile, foodRow) {
     gp: (Number(baseTotals?.gp) || 0) + delta.gp,
   };
   const breakpoints = enabledBreakpoints(profile);
+  const breakpointTargets = highestBreakpointTargetsByStat(profile, breakpoints);
   const breakpointResults = breakpoints.map((breakpoint) => ({
     ...breakpoint,
     hit: breakpointHit(updatedTotals, breakpoint),
   }));
   const priorityLedger = buildPriorityLedger(breakpointResults);
+  const statDump = normalizeAdvancedStatDump(profile?.statDump, ADVANCED_STAT_DUMP.NONE);
+  const statDumpSurplus = computeStatDumpSurplus(updatedTotals, breakpointTargets);
   const hitCount = breakpointResults.reduce((count, row) => count + (row.hit ? 1 : 0), 0);
   const statSum =
     normalizeNonNegativeInteger(updatedTotals.gathering, 0) +
@@ -947,6 +1137,10 @@ function buildProfileFoodOption(baseTotals, profile, foodRow) {
     hitCount,
     enabledCount: breakpointResults.length,
     statSum,
+    statDump,
+    breakpointTargets,
+    statDumpSurplus,
+    statDumpPreferenceScore: statDumpPreferenceScore(statDump, statDumpSurplus),
     updatedTotals,
     priorityLedger,
     breakpointResults,
@@ -973,51 +1167,20 @@ function evaluateProfileForTotals(baseTotals, profile) {
       ? candidateRows.map((foodRow) => buildProfileFoodOption(baseTotals, profile, foodRow))
       : [buildProfileFoodOption(baseTotals, profile, null)];
 
-  options.sort((left, right) => {
-    const priorityDiff = comparePriorityLedgers(left?.priorityLedger, right?.priorityLedger);
-    if (priorityDiff !== 0) {
-      return priorityDiff;
-    }
-    const hitDiff = (Number(right?.hitCount) || 0) - (Number(left?.hitCount) || 0);
-    if (hitDiff !== 0) {
-      return hitDiff;
-    }
-    const sumDiff = (Number(right?.statSum) || 0) - (Number(left?.statSum) || 0);
-    if (sumDiff !== 0) {
-      return sumDiff;
-    }
-    const gatheringDiff =
-      normalizeNonNegativeInteger(right?.updatedTotals?.gathering, 0) -
-      normalizeNonNegativeInteger(left?.updatedTotals?.gathering, 0);
-    if (gatheringDiff !== 0) {
-      return gatheringDiff;
-    }
-    const perceptionDiff =
-      normalizeNonNegativeInteger(right?.updatedTotals?.perception, 0) -
-      normalizeNonNegativeInteger(left?.updatedTotals?.perception, 0);
-    if (perceptionDiff !== 0) {
-      return perceptionDiff;
-    }
-    const gpDiff =
-      normalizeNonNegativeInteger(right?.updatedTotals?.gp, 0) -
-      normalizeNonNegativeInteger(left?.updatedTotals?.gp, 0);
-    if (gpDiff !== 0) {
-      return gpDiff;
-    }
-    return normalizeNonNegativeInteger(left?.food?.itemId, 0) - normalizeNonNegativeInteger(right?.food?.itemId, 0);
-  });
+  options.sort((left, right) => compareProfileFoodOptions(left, right, profile));
 
   const top = options[0];
   const bestOptions = options.filter(
     (candidate) =>
-      comparePriorityLedgers(candidate?.priorityLedger, top?.priorityLedger) === 0 &&
-      normalizeNonNegativeInteger(candidate?.hitCount, 0) === normalizeNonNegativeInteger(top?.hitCount, 0) &&
+      compareProfileFoodOptions(candidate, top, profile) === 0 &&
+      (Number(candidate?.statDumpPreferenceScore) || 0) === (Number(top?.statDumpPreferenceScore) || 0) &&
       normalizeNonNegativeInteger(candidate?.statSum, 0) === normalizeNonNegativeInteger(top?.statSum, 0),
   );
 
   return {
     profileName: String(profile?.name ?? "Profile"),
     profileId: String(profile?.id ?? ""),
+    statDump: normalizeAdvancedStatDump(profile?.statDump, ADVANCED_STAT_DUMP.NONE),
     useHq: profile?.useHq !== false,
     bestOption: top,
     bestOptions,
@@ -1029,6 +1192,7 @@ function cloneAdvancedProfileSummary(profileSummary) {
   return {
     profileName: String(profileSummary?.profileName ?? "Profile"),
     profileId: String(profileSummary?.profileId ?? ""),
+    statDump: normalizeAdvancedStatDump(profileSummary?.statDump, ADVANCED_STAT_DUMP.NONE),
     enabledBreakpoints: normalizeNonNegativeInteger(best?.enabledCount, 0),
     breakpointsMet: normalizeNonNegativeInteger(best?.hitCount, 0),
     totals: summarizeTotals(best?.updatedTotals),
@@ -1068,6 +1232,12 @@ function compareAdvancedSummaries(left, right) {
   if (enabledDiff !== 0) {
     return enabledDiff;
   }
+  const dumpDiff =
+    (Number(right?.dumpPreferenceScore) || 0) -
+    (Number(left?.dumpPreferenceScore) || 0);
+  if (dumpDiff !== 0) {
+    return dumpDiff;
+  }
   const sumDiff =
     normalizeNonNegativeInteger(right?.tiebreakStatSum, 0) -
     normalizeNonNegativeInteger(left?.tiebreakStatSum, 0);
@@ -1093,6 +1263,10 @@ function buildAdvancedSummaryFromProfileEvaluations(profileEvaluations) {
   const priorityLedger = mergePriorityLedgers(
     scoringProfiles.map((profileEval) => profileEval?.bestOption?.priorityLedger),
   );
+  const dumpPreferenceScore = rows.reduce(
+    (sum, profileEval) => sum + (Number(profileEval?.bestOption?.statDumpPreferenceScore) || 0),
+    0,
+  );
   const tiebreakStatSum = rows.reduce(
     (sum, profileEval) => sum + normalizeNonNegativeInteger(profileEval?.bestOption?.statSum, 0),
     0,
@@ -1102,6 +1276,7 @@ function buildAdvancedSummaryFromProfileEvaluations(profileEvaluations) {
     breakpointsEnabled,
     breakpointsMet,
     priorityLedger,
+    dumpPreferenceScore,
     tiebreakStatSum,
   };
 }
@@ -1193,6 +1368,7 @@ function evaluateSavedPlanBreakpointCheck(savedPlan, foodDraftByProfileId) {
     return {
       profileName: String(profile?.name ?? "Profile"),
       profileId,
+      statDump: normalizeAdvancedStatDump(profile?.statDump, ADVANCED_STAT_DUMP.NONE),
       useHq: selectedDraft.useHq,
       bestOption: option,
       bestOptions: [option],
@@ -1205,12 +1381,155 @@ function evaluateSavedPlanBreakpointCheck(savedPlan, foodDraftByProfileId) {
     breakpointsEnabled: summary.breakpointsEnabled,
     breakpointsMet: summary.breakpointsMet,
     priorityLedger: summary.priorityLedger,
+    dumpPreferenceScore: summary.dumpPreferenceScore,
     tiebreakStatSum: summary.tiebreakStatSum,
     baseTotals,
     profiles: profileEvaluations.map((profileEval) => cloneAdvancedProfileSummary(profileEval)),
     foodDraftByProfileId: Object.fromEntries(
       profileEvaluations.map((profileEval) => [String(profileEval?.profileId ?? ""), { ...profileEval.selectedFood }]),
     ),
+  };
+}
+
+function advancedBreakpointPatternKeyFromProfiles(profiles) {
+  const rows = Array.isArray(profiles) ? profiles : [];
+  return rows
+    .map((profile, profileIndex) => {
+      const profileId = String(profile?.profileId ?? `profile_${profileIndex + 1}`);
+      const breakpointRows = Array.isArray(profile?.breakpointResults) ? profile.breakpointResults : [];
+      const breakpointToken = breakpointRows
+        .map((entry, breakpointIndex) => {
+          const breakpointId = String(entry?.id ?? `bp_${breakpointIndex + 1}`);
+          return `${breakpointId}:${entry?.hit === true ? 1 : 0}`;
+        })
+        .join(",");
+      return `${profileId}[${breakpointToken}]`;
+    })
+    .join("||");
+}
+
+function advancedBreakpointPatternKeyForRow(row) {
+  return advancedBreakpointPatternKeyFromProfiles(row?.advanced?.profiles);
+}
+
+function advancedRowTotalKey(row) {
+  const totals = summarizeTotals({
+    gathering: row?.totalGathering,
+    perception: row?.totalPerception,
+    gp: row?.totalGp,
+  });
+  return `${totals.gathering}|${totals.perception}|${totals.gp}`;
+}
+
+function compareAdvancedRows(left, right) {
+  const advancedDiff = compareAdvancedSummaries(left?.advanced, right?.advanced);
+  if (advancedDiff !== 0) {
+    return advancedDiff;
+  }
+  const scoreDiff = (Number(right?.score) || 0) - (Number(left?.score) || 0);
+  if (scoreDiff !== 0) {
+    return scoreDiff;
+  }
+  const totalDiff =
+    normalizeNonNegativeInteger(right?.totalGathering, 0) +
+    normalizeNonNegativeInteger(right?.totalPerception, 0) +
+    normalizeNonNegativeInteger(right?.totalGp, 0) -
+    (normalizeNonNegativeInteger(left?.totalGathering, 0) +
+      normalizeNonNegativeInteger(left?.totalPerception, 0) +
+      normalizeNonNegativeInteger(left?.totalGp, 0));
+  if (totalDiff !== 0) {
+    return totalDiff;
+  }
+  return 0;
+}
+
+function buildAdvancedVariantPlanFromRow(row) {
+  const sourcePlan =
+    Array.isArray(row?.plans) && row.plans.length > 0
+      ? row.plans[0]
+      : null;
+  const totals = summarizeTotals({
+    gathering: sourcePlan?.totalGathering ?? row?.totalGathering,
+    perception: sourcePlan?.totalPerception ?? row?.totalPerception,
+    gp: sourcePlan?.totalGp ?? row?.totalGp,
+  });
+  const fallbackFood = {
+    itemId: 0,
+    name: "No food",
+    useHq: false,
+    delta: { gathering: 0, perception: 0, gp: 0 },
+  };
+
+  return {
+    ...(sourcePlan ?? {}),
+    score: Number(row?.score) || 0,
+    food: sourcePlan?.food ?? row?.food ?? fallbackFood,
+    totalGathering: totals.gathering,
+    totalPerception: totals.perception,
+    totalGp: totals.gp,
+    meetsTargets: true,
+    advanced: sourcePlan?.advanced ?? {
+      baseTotals: summarizeTotals(row?.advanced?.baseTotals),
+      profiles: Array.isArray(row?.advanced?.profiles) ? row.advanced.profiles : [],
+    },
+  };
+}
+
+function selectAdvancedPatternVariants(groupRows, maxVariants = ADVANCED_MODE_VARIANT_LIMIT) {
+  const rows = [...(Array.isArray(groupRows) ? groupRows : [])].sort(compareAdvancedRows);
+  if (rows.length === 0) {
+    return [];
+  }
+
+  const selected = [];
+  const usedTotals = new Set();
+  for (const row of rows) {
+    const totalsKey = advancedRowTotalKey(row);
+    if (usedTotals.has(totalsKey)) {
+      continue;
+    }
+    selected.push(buildAdvancedVariantPlanFromRow(row));
+    usedTotals.add(totalsKey);
+    if (selected.length >= Math.max(1, normalizeNonNegativeInteger(maxVariants, ADVANCED_MODE_VARIANT_LIMIT))) {
+      break;
+    }
+  }
+
+  if (selected.length > 0) {
+    return selected;
+  }
+  return [buildAdvancedVariantPlanFromRow(rows[0])];
+}
+
+function buildAdvancedRowFromPatternGroup(groupRows, activeScoringProfileCount) {
+  const rows = [...(Array.isArray(groupRows) ? groupRows : [])].sort(compareAdvancedRows);
+  const primary = rows[0];
+  if (!primary) {
+    return null;
+  }
+
+  const plans = selectAdvancedPatternVariants(rows, ADVANCED_MODE_VARIANT_LIMIT);
+  const primaryPlan = plans[0] ?? buildAdvancedVariantPlanFromRow(primary);
+  const totals = summarizeTotals({
+    gathering: primaryPlan?.totalGathering ?? primary?.totalGathering,
+    perception: primaryPlan?.totalPerception ?? primary?.totalPerception,
+    gp: primaryPlan?.totalGp ?? primary?.totalGp,
+  });
+  const breakpointsMet = normalizeNonNegativeInteger(primary?.advanced?.breakpointsMet, Number(primary?.score) || 0);
+
+  return {
+    ...primary,
+    score: breakpointsMet,
+    totalGathering: totals.gathering,
+    totalPerception: totals.perception,
+    totalGp: totals.gp,
+    food: primaryPlan?.food ?? primary?.food,
+    meetsTargets: true,
+    plans,
+    advanced: {
+      ...(primary?.advanced ?? {}),
+      enabledProfileCount: activeScoringProfileCount,
+    },
   };
 }
 
@@ -1241,6 +1560,7 @@ function applyAdvancedMode(results) {
         return {
           profileName: String(profileEval?.profileName ?? "Profile"),
           profileId: String(profileEval?.profileId ?? ""),
+          statDump: normalizeAdvancedStatDump(profileEval?.statDump, ADVANCED_STAT_DUMP.NONE),
           enabledBreakpoints: normalizeNonNegativeInteger(option?.enabledCount, 0),
           breakpointsMet: normalizeNonNegativeInteger(option?.hitCount, 0),
           totals: summarizeTotals(option?.updatedTotals),
@@ -1296,23 +1616,32 @@ function applyAdvancedMode(results) {
         breakpointsMet: summary.breakpointsMet,
         breakpointsEnabled: summary.breakpointsEnabled,
         priorityLedger: summary.priorityLedger,
+        dumpPreferenceScore: summary.dumpPreferenceScore,
         tiebreakStatSum: summary.tiebreakStatSum,
       },
     };
   });
 
-  const ranked = evaluated.sort((left, right) => {
-    const advancedDiff = compareAdvancedSummaries(left?.advanced, right?.advanced);
-    if (advancedDiff !== 0) {
-      return advancedDiff;
+  const ranked = evaluated.sort(compareAdvancedRows);
+
+  const groupedByBreakpointPattern = new Map();
+  for (const row of ranked) {
+    const patternKey = advancedBreakpointPatternKeyForRow(row);
+    if (!groupedByBreakpointPattern.has(patternKey)) {
+      groupedByBreakpointPattern.set(patternKey, []);
     }
-    return (Number(right?.score) || 0) - (Number(left?.score) || 0);
-  });
+    groupedByBreakpointPattern.get(patternKey).push(row);
+  }
+
+  const groupedRows = Array.from(groupedByBreakpointPattern.values())
+    .map((groupRows) => buildAdvancedRowFromPatternGroup(groupRows, activeScoringProfileCount))
+    .filter((row) => !!row)
+    .sort(compareAdvancedRows);
 
   // The engine returns the full Pareto frontier (up to thousands of rows) so we
   // can rank by breakpoint hits here; only keep the requested display count.
-  const displayLimit = Math.max(1, normalizeNonNegativeInteger(state?.solve?.maxResults, 10));
-  return ranked.slice(0, displayLimit);
+  const displayLimit = normalizeMaxResultsForSolveMode(state?.solve?.maxResults, SOLVER_MODES.ADVANCED);
+  return groupedRows.slice(0, displayLimit);
 }
 
 function buildFoodOptionForTotals(resultTotals, foodRow) {
@@ -1335,136 +1664,331 @@ function buildFoodOptionForTotals(resultTotals, foodRow) {
   };
 }
 
-function rankedFoodOptionsForTotals(resultTotals) {
-  const options = getFoodRows()
-    .map((foodRow) => buildFoodOptionForTotals(resultTotals, foodRow))
-    .filter((option) => option.score > 0);
+const NORMAL_MODE_VARIANT_LIMIT = 5;
+const NO_FOOD_VARIANT_KEY = "__no_food__";
 
-  options.sort((left, right) => {
-    const scoreDiff = (Number(right?.score) || 0) - (Number(left?.score) || 0);
-    if (scoreDiff !== 0) {
-      return scoreDiff;
-    }
-    const gatheringDiff =
-      (Number(right?.updatedTotals?.gathering) || 0) - (Number(left?.updatedTotals?.gathering) || 0);
-    if (gatheringDiff !== 0) {
-      return gatheringDiff;
-    }
-    const perceptionDiff =
-      (Number(right?.updatedTotals?.perception) || 0) - (Number(left?.updatedTotals?.perception) || 0);
-    if (perceptionDiff !== 0) {
-      return perceptionDiff;
-    }
-    const gpDiff = (Number(right?.updatedTotals?.gp) || 0) - (Number(left?.updatedTotals?.gp) || 0);
-    if (gpDiff !== 0) {
-      return gpDiff;
-    }
-    return (Number(left?.food?.itemId) || 0) - (Number(right?.food?.itemId) || 0);
-  });
+function buildNoFoodOptionForTotals(resultTotals) {
+  const totals = summarizeTotals(resultTotals);
+  const delta = {
+    gathering: 0,
+    perception: 0,
+    gp: 0,
+  };
+  return {
+    score: 0,
+    updatedTotals: totals,
+    food: {
+      itemId: 0,
+      name: "No food",
+      useHq: false,
+      delta,
+    },
+  };
+}
 
-  return options;
+function buildNoFoodVariantSpec() {
+  return {
+    key: NO_FOOD_VARIANT_KEY,
+    itemId: 0,
+    name: "No food",
+    useHq: false,
+    foodRow: null,
+  };
+}
+
+function buildFoodVariantSpecFromRow(foodRow) {
+  const itemId = normalizeNonNegativeInteger(foodRow?.item_id, 0);
+  const useHq = !!(state.food.useHq && foodRow?.can_be_hq);
+  return {
+    key: `food:${itemId}:${useHq ? "hq" : "nq"}`,
+    itemId,
+    name: String(foodRow?.name ?? `Food ${itemId}`),
+    useHq,
+    foodRow,
+  };
+}
+
+function buildNormalModeVariantFoodSpecs() {
+  const noFood = buildNoFoodVariantSpec();
+  if (state.food.isFixed) {
+    const selectedFoodRow = getSelectedFoodRow();
+    if (!selectedFoodRow) {
+      return [noFood];
+    }
+    return [buildFoodVariantSpecFromRow(selectedFoodRow)];
+  }
+
+  const specs = [noFood, ...getFoodRows().map((foodRow) => buildFoodVariantSpecFromRow(foodRow))];
+  const deduped = new Map();
+  for (const spec of specs) {
+    if (!spec || !spec.key) {
+      continue;
+    }
+    deduped.set(spec.key, spec);
+  }
+  return Array.from(deduped.values());
+}
+
+function buildFoodOptionForSpec(baseTotals, foodSpec) {
+  if (normalizeNonNegativeInteger(foodSpec?.itemId, 0) <= 0 || !foodSpec?.foodRow) {
+    return buildNoFoodOptionForTotals(baseTotals);
+  }
+  return buildFoodOptionForTotals(baseTotals, foodSpec.foodRow);
+}
+
+function normalModeExcessTotal(updatedTotals, targets) {
+  const safeTotals = summarizeTotals(updatedTotals);
+  const safeTargets = summarizeTotals(targets);
+  return (
+    Math.max(0, safeTotals.gathering - safeTargets.gathering) +
+    Math.max(0, safeTotals.perception - safeTargets.perception) +
+    Math.max(0, safeTotals.gp - safeTargets.gp)
+  );
+}
+
+function normalizeNormalModeScore(value) {
+  const score = Number(value);
+  if (!Number.isFinite(score)) {
+    return Number.NEGATIVE_INFINITY;
+  }
+  return score;
+}
+
+function buildNormalModeMeldSignature(plan) {
+  const pieces = Array.isArray(plan?.pieceMelds) ? plan.pieceMelds : [];
+  return pieces
+    .map((piece, pieceIndex) => {
+      const pieceId = normalizeNonNegativeInteger(piece?.pieceId, 0);
+      const slot = String(piece?.slot ?? "unknown");
+      const meldTokens = (Array.isArray(piece?.melds) ? piece.melds : [])
+        .map((meld) => {
+          const slotIndex = normalizeNonNegativeInteger(meld?.slotIndex, 0);
+          const statKey = String(meld?.stat ?? "x");
+          const grade = normalizeNonNegativeInteger(meld?.grade, 0);
+          const appliedValue = normalizeNonNegativeInteger(meld?.appliedValue, 0);
+          return `${slotIndex}:${statKey}:${grade}:${appliedValue}`;
+        })
+        .sort()
+        .join(",");
+      return `${pieceIndex}:${slot}:${pieceId}:${meldTokens}`;
+    })
+    .join("|");
+}
+
+function normalModePlanMeldStatTotal(plan) {
+  const pieces = Array.isArray(plan?.pieceMelds) ? plan.pieceMelds : [];
+  let total = 0;
+  for (const piece of pieces) {
+    for (const meld of Array.isArray(piece?.melds) ? piece.melds : []) {
+      total += normalizeNonNegativeInteger(meld?.appliedValue, 0);
+    }
+  }
+  return total;
+}
+
+function compareNormalModeVariantCandidates(left, right) {
+  const leftMeets = left?.meetsTargets === true;
+  const rightMeets = right?.meetsTargets === true;
+  if (leftMeets !== rightMeets) {
+    return Number(rightMeets) - Number(leftMeets);
+  }
+  const scoreDiff = normalizeNormalModeScore(right?.score) - normalizeNormalModeScore(left?.score);
+  if (scoreDiff !== 0) {
+    return scoreDiff;
+  }
+  const excessDiff =
+    normalizeNonNegativeInteger(left?.excessTotal, Number.MAX_SAFE_INTEGER) -
+    normalizeNonNegativeInteger(right?.excessTotal, Number.MAX_SAFE_INTEGER);
+  if (excessDiff !== 0) {
+    return excessDiff;
+  }
+  const meldDiff = normalizeNonNegativeInteger(left?.meldStatTotal, 0) - normalizeNonNegativeInteger(right?.meldStatTotal, 0);
+  if (meldDiff !== 0) {
+    return meldDiff;
+  }
+  const foodItemDiff =
+    normalizeNonNegativeInteger(left?.food?.itemId, Number.MAX_SAFE_INTEGER) -
+    normalizeNonNegativeInteger(right?.food?.itemId, Number.MAX_SAFE_INTEGER);
+  if (foodItemDiff !== 0) {
+    return foodItemDiff;
+  }
+  const sourceRowDiff =
+    normalizeNonNegativeInteger(left?.sourceRowIndex, Number.MAX_SAFE_INTEGER) -
+    normalizeNonNegativeInteger(right?.sourceRowIndex, Number.MAX_SAFE_INTEGER);
+  if (sourceRowDiff !== 0) {
+    return sourceRowDiff;
+  }
+  return normalizeNonNegativeInteger(left?.sourcePlanIndex, Number.MAX_SAFE_INTEGER) - normalizeNonNegativeInteger(
+    right?.sourcePlanIndex,
+    Number.MAX_SAFE_INTEGER,
+  );
+}
+
+function buildNormalModeScoredCandidates(sourceRows, foodSpecs) {
+  const rows = Array.isArray(sourceRows) ? sourceRows : [];
+  const specs = Array.isArray(foodSpecs) ? foodSpecs : [];
+  const targetTotals = summarizeTotals(state.targets);
+  const candidates = [];
+
+  for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+    const row = rows[rowIndex];
+    const sourcePlans = Array.isArray(row?.plans) ? row.plans.filter((plan) => !!plan) : [];
+    if (sourcePlans.length === 0) {
+      continue;
+    }
+    const baseTotals = summarizeTotals({
+      gathering: row?.totalGathering,
+      perception: row?.totalPerception,
+      gp: row?.totalGp,
+    });
+    for (let planIndex = 0; planIndex < sourcePlans.length; planIndex += 1) {
+      const plan = sourcePlans[planIndex];
+      const meldSignature = buildNormalModeMeldSignature(plan);
+      const meldStatTotal = normalModePlanMeldStatTotal(plan);
+      for (const spec of specs) {
+        const option = buildFoodOptionForSpec(baseTotals, spec);
+        const updatedTotals = summarizeTotals(option?.updatedTotals);
+        const score = normalizeNormalModeScore(scoreCandidate(updatedTotals, targetTotals));
+        const food = option?.food ?? buildNoFoodOptionForTotals(baseTotals).food;
+        const foodKey = String(spec?.key ?? `food:${normalizeNonNegativeInteger(food?.itemId, 0)}:${food?.useHq ? "hq" : "nq"}`);
+        candidates.push({
+          sourceRow: row,
+          sourceRowIndex: rowIndex,
+          sourcePlanIndex: planIndex,
+          plan,
+          score,
+          meetsTargets: totalsMeetTargets(updatedTotals),
+          excessTotal: normalModeExcessTotal(updatedTotals, targetTotals),
+          meldStatTotal,
+          updatedTotals,
+          food,
+          foodKey,
+          meldSignature,
+          variantKey: `${meldSignature}|${foodKey}`,
+        });
+      }
+    }
+  }
+
+  return candidates;
+}
+
+function selectDistinctVariantsForScoreBucket(candidates, maxVariants = NORMAL_MODE_VARIANT_LIMIT) {
+  const sorted = [...(Array.isArray(candidates) ? candidates : [])].sort(compareNormalModeVariantCandidates);
+  const selected = [];
+  const usedMeldSignatures = new Set();
+  const usedFoodKeys = new Set();
+  const usedVariantKeys = new Set();
+
+  for (const candidate of sorted) {
+    if (!candidate || usedVariantKeys.has(candidate.variantKey)) {
+      continue;
+    }
+    const meldSignature = String(candidate?.meldSignature ?? "");
+    const foodKey = String(candidate?.foodKey ?? "");
+    if (usedMeldSignatures.has(meldSignature) || usedFoodKeys.has(foodKey)) {
+      continue;
+    }
+    selected.push(candidate);
+    usedVariantKeys.add(candidate.variantKey);
+    usedMeldSignatures.add(meldSignature);
+    usedFoodKeys.add(foodKey);
+    if (selected.length >= Math.max(1, normalizeNonNegativeInteger(maxVariants, NORMAL_MODE_VARIANT_LIMIT))) {
+      return selected;
+    }
+  }
+
+  if (selected.length > 0) {
+    return selected;
+  }
+
+  for (const candidate of sorted) {
+    if (!candidate || usedVariantKeys.has(candidate.variantKey)) {
+      continue;
+    }
+    selected.push(candidate);
+    usedVariantKeys.add(candidate.variantKey);
+    if (selected.length >= Math.max(1, normalizeNonNegativeInteger(maxVariants, NORMAL_MODE_VARIANT_LIMIT))) {
+      break;
+    }
+  }
+  return selected;
+}
+
+function buildPlanVariantFromScoredCandidate(candidate) {
+  const updatedTotals = summarizeTotals(candidate?.updatedTotals);
+  return {
+    ...(candidate?.plan ?? {}),
+    score: normalizeNormalModeScore(candidate?.score),
+    varianceScore: 0,
+    food: candidate?.food ?? buildNoFoodOptionForTotals(updatedTotals).food,
+    totalGathering: updatedTotals.gathering,
+    totalPerception: updatedTotals.perception,
+    totalGp: updatedTotals.gp,
+    meetsTargets: Boolean(candidate?.meetsTargets),
+  };
+}
+
+function buildNormalModeRowFromVariantGroup(variants) {
+  const primary = Array.isArray(variants) ? variants[0] ?? null : null;
+  const row = primary?.sourceRow ?? {};
+  const totals = summarizeTotals(primary?.updatedTotals);
+  return {
+    ...row,
+    score: normalizeNormalModeScore(primary?.score),
+    totalGathering: totals.gathering,
+    totalPerception: totals.perception,
+    totalGp: totals.gp,
+    meetsTargets: Boolean(primary?.meetsTargets),
+    food: primary?.food ?? buildNoFoodOptionForTotals(totals).food,
+    plans: (Array.isArray(variants) ? variants : []).map((variant) => buildPlanVariantFromScoredCandidate(variant)),
+  };
+}
+
+function buildNormalModeRowsFromScoredCandidates(candidates) {
+  const rows = Array.isArray(candidates) ? candidates : [];
+  if (rows.length === 0) {
+    return [];
+  }
+
+  const byScore = new Map();
+  for (const candidate of rows) {
+    const score = normalizeNormalModeScore(candidate?.score);
+    const key = String(score);
+    if (!byScore.has(key)) {
+      byScore.set(key, []);
+    }
+    byScore.get(key).push(candidate);
+  }
+
+  const scoreKeys = Array.from(byScore.keys()).sort((left, right) => normalizeNormalModeScore(right) - normalizeNormalModeScore(left));
+  const maxRows = normalizeMaxResultsForSolveMode(state?.solve?.maxResults, SOLVER_MODES.NORMAL);
+  const builtRows = [];
+
+  for (const scoreKey of scoreKeys) {
+    const scoreCandidates = byScore.get(scoreKey) ?? [];
+    const variants = selectDistinctVariantsForScoreBucket(scoreCandidates, NORMAL_MODE_VARIANT_LIMIT);
+    if (variants.length === 0) {
+      continue;
+    }
+    builtRows.push(buildNormalModeRowFromVariantGroup(variants));
+    if (builtRows.length >= maxRows) {
+      break;
+    }
+  }
+
+  return builtRows;
 }
 
 function applyFixedFood(results) {
-  if (!state.food.isFixed) {
-    const foodRows = getFoodRows();
-    if (foodRows.length === 0) {
-      return results;
-    }
-    return results.map((row) => {
-      const totals = {
-        gathering: Number(row.totalGathering) || 0,
-        perception: Number(row.totalPerception) || 0,
-        gp: Number(row.totalGp) || 0,
-      };
-      const rankedFoodOptions = rankedFoodOptionsForTotals(totals);
-      if (rankedFoodOptions.length === 0) {
-        return row;
-      }
-      const sourcePlans = Array.isArray(row?.plans) ? row.plans : [];
-      const plans = sourcePlans.map((plan, planIndex) => {
-        const option = rankedFoodOptions[planIndex % rankedFoodOptions.length] ?? rankedFoodOptions[0];
-        const meetsTargets = totalsMeetTargets(option.updatedTotals);
-        return {
-          ...plan,
-          food: option.food,
-          totalGathering: option.updatedTotals.gathering,
-          totalPerception: option.updatedTotals.perception,
-          totalGp: option.updatedTotals.gp,
-          meetsTargets,
-        };
-      });
-      const primaryOption =
-        (plans[0] && {
-          updatedTotals: {
-            gathering: Number(plans[0]?.totalGathering) || 0,
-            perception: Number(plans[0]?.totalPerception) || 0,
-            gp: Number(plans[0]?.totalGp) || 0,
-          },
-          food: plans[0]?.food ?? rankedFoodOptions[0].food,
-          meetsTargets: Boolean(plans[0]?.meetsTargets),
-        }) ??
-        {
-          updatedTotals: rankedFoodOptions[0].updatedTotals,
-          food: rankedFoodOptions[0].food,
-          meetsTargets: totalsMeetTargets(rankedFoodOptions[0].updatedTotals),
-        };
-      return {
-        ...row,
-        totalGathering: primaryOption.updatedTotals.gathering,
-        totalPerception: primaryOption.updatedTotals.perception,
-        totalGp: primaryOption.updatedTotals.gp,
-        meetsTargets: primaryOption.meetsTargets,
-        food: primaryOption.food,
-        plans,
-      };
-    });
+  const sourceRows = Array.isArray(results) ? results : [];
+  const foodSpecs = buildNormalModeVariantFoodSpecs();
+  const candidates = buildNormalModeScoredCandidates(sourceRows, foodSpecs);
+  const rows = buildNormalModeRowsFromScoredCandidates(candidates);
+  if (rows.length > 0) {
+    return rows;
   }
-
-  const foodRow = getSelectedFoodRow();
-  if (!foodRow) {
-    return results;
-  }
-
-  return results.map((row) => {
-    const totals = {
-      gathering: Number(row.totalGathering) || 0,
-      perception: Number(row.totalPerception) || 0,
-      gp: Number(row.totalGp) || 0,
-    };
-    const foodDelta = computeFoodDeltaForTotals(totals, foodRow, state.food.useHq);
-    const updatedTotals = {
-      gathering: totals.gathering + foodDelta.gathering,
-      perception: totals.perception + foodDelta.perception,
-      gp: totals.gp + foodDelta.gp,
-    };
-    const food = {
-      itemId: Number(foodRow.item_id) || 0,
-      name: foodRow.name,
-      useHq: !!(state.food.useHq && foodRow.can_be_hq),
-      delta: foodDelta,
-    };
-    const meetsTargets = totalsMeetTargets(updatedTotals);
-    const sourcePlans = Array.isArray(row?.plans) ? row.plans : [];
-    const plans = sourcePlans.map((plan) => ({
-      ...plan,
-      food,
-      totalGathering: updatedTotals.gathering,
-      totalPerception: updatedTotals.perception,
-      totalGp: updatedTotals.gp,
-      meetsTargets,
-    }));
-
-    return {
-      ...row,
-      totalGathering: updatedTotals.gathering,
-      totalPerception: updatedTotals.perception,
-      totalGp: updatedTotals.gp,
-      meetsTargets,
-      food,
-      plans,
-    };
-  });
+  return sourceRows;
 }
 
 function gpSpreadOrder(rows) {
@@ -1940,8 +2464,13 @@ function planDiffToggleKey(resultIndex, planIndex) {
   return `${normalizeNonNegativeInteger(resultIndex, 0)}:${normalizeNonNegativeInteger(planIndex, 0)}`;
 }
 
-function defaultSavedPlanNameForVariant(resultIndex, planIndex, row) {
-  return `Plan #${resultIndex + 1}.${planIndex + 1} - ${normalizeNonNegativeInteger(row?.totalGathering, 0)}/${normalizeNonNegativeInteger(row?.totalPerception, 0)}/${normalizeNonNegativeInteger(row?.totalGp, 0)}`;
+function defaultSavedPlanNameForVariant(resultIndex, planIndex, row, planVariant) {
+  const totals = summarizeTotals({
+    gathering: planVariant?.totalGathering ?? row?.totalGathering,
+    perception: planVariant?.totalPerception ?? row?.totalPerception,
+    gp: planVariant?.totalGp ?? row?.totalGp,
+  });
+  return `Plan #${resultIndex + 1}.${planIndex + 1} - ${totals.gathering}/${totals.perception}/${totals.gp}`;
 }
 
 function saveResultPlanVariant(resultIndex, planIndex) {
@@ -1952,7 +2481,7 @@ function saveResultPlanVariant(resultIndex, planIndex) {
     return;
   }
 
-  const defaultName = defaultSavedPlanNameForVariant(resultIndex, planIndex, row);
+  const defaultName = defaultSavedPlanNameForVariant(resultIndex, planIndex, row, planVariant);
   let customName = defaultName;
   if (typeof window !== "undefined" && typeof window.prompt === "function") {
     try {
@@ -2334,34 +2863,45 @@ function ensureSolverWorker() {
 // solver pruning without over-constraining and discarding good plans. So in
 // advanced mode we leave the solver targets empty (the depth-first search keeps
 // the full Pareto frontier of gear+meld stat combinations via dominated-state
-// pruning) and ask the engine for that whole frontier. applyAdvancedMode then
-// ranks the frontier by breakpoint hits and keeps the display count. A small
-// maxResults here would truncate the frontier by raw stat-sum and silently drop
-// breakpoint-optimal builds (e.g. GP-heavy plans), which is why advanced
-// previously returned worse plans than a hand-built set.
-const ADVANCED_FRONTIER_RESULT_LIMIT = 4000;
+// pruning) and ask the engine for a broad frontier. applyAdvancedMode then ranks
+// by breakpoint hits/stat-dump preferences and keeps the display count. To avoid
+// truncation bias, runSolver adaptively widens the advanced frontier cap when a
+// run saturates without timing out.
+function resolveSolveMode(options = {}) {
+  if (isAdvancedModeEnabled(options)) {
+    return SOLVER_MODES.ADVANCED;
+  }
+  return SOLVER_MODES.NORMAL;
+}
 
-function buildSolveInput(options = {}) {
-  const targetOverride = options?.targetsOverride;
-  const advancedActive = isAdvancedModeEnabled(options);
-  const solveTargets = advancedActive
-    ? { gathering: 0, perception: 0, gp: 0 }
-    : targetOverride
-      ? summarizeTotals(targetOverride)
-      : state.targets;
-  return {
-    selectedGearRows: state.selectedGearRows,
-    materiaRows: state.data?.materia?.rows,
-    rules: state.data?.rules,
-    targets: solveTargets,
-    maxResults: advancedActive ? ADVANCED_FRONTIER_RESULT_LIMIT : state.solve.maxResults,
-    maxBranches: state.solve.maxBranches,
-    maxDurationMs: state.solve.timeBudgetMs,
-    maxCandidatesPerPiece: 0,
-    useBruteForce: state.solve.useBruteForce === true,
-    useGearHq: state.gear.useHq,
+function maxResultsLimitForSolveMode(solveMode) {
+  return isAdvancedSolverMode(solveMode)
+    ? ADVANCED_MODE_MAX_RESULTS_LIMIT
+    : NORMAL_MODE_MAX_RESULTS_LIMIT;
+}
+
+function normalizeMaxResultsForSolveMode(value, solveMode) {
+  const modeLimit = maxResultsLimitForSolveMode(solveMode);
+  return Math.min(modeLimit, Math.max(1, normalizeNonNegativeInteger(value, modeLimit)));
+}
+
+function applySolveDefaultsForMode(solveMode) {
+  state.solve.maxResults = maxResultsLimitForSolveMode(solveMode);
+  state.solve.useBruteForce = isAdvancedSolverMode(solveMode);
+}
+
+function buildSolveInputForMode(solveMode, options = {}) {
+  if (isAdvancedSolverMode(solveMode)) {
+    return buildAdvancedSolveInput(state, {
+      baseGathererGp: BASE_GATHERER_GP,
+      frontierResultLimit: options?.frontierResultLimit,
+    });
+  }
+
+  return buildNormalSolveInput(state, {
+    targetsOverride: options?.targetsOverride,
     baseGathererGp: BASE_GATHERER_GP,
-  };
+  });
 }
 
 function applyDraftTargetsToSolveTargets() {
@@ -2504,6 +3044,15 @@ function updateAdvancedProfileFoodQuality(profileIndex, useHq) {
   markAdvancedDirty();
 }
 
+function updateAdvancedProfileStatDump(profileIndex, statDump) {
+  const profile = getEditableAdvancedProfile(profileIndex);
+  if (!profile) {
+    return;
+  }
+  profile.statDump = normalizeAdvancedStatDump(statDump, ADVANCED_STAT_DUMP.NONE);
+  markAdvancedDirty();
+}
+
 function updateAdvancedProfileEnabled(profileIndex, enabled) {
   const profile = getEditableAdvancedProfile(profileIndex);
   if (!profile) {
@@ -2572,6 +3121,15 @@ function removeAdvancedProfile(profileIndex) {
     return;
   }
   const safeIndex = Math.min(profiles.length - 1, normalizeNonNegativeInteger(profileIndex, 0));
+  const profile = profiles[safeIndex];
+  const fallbackName = `Profile ${safeIndex + 1}`;
+  const profileName = String(profile?.name ?? fallbackName).trim() || fallbackName;
+  const confirmed = typeof window === "undefined" || typeof window.confirm !== "function"
+    ? true
+    : window.confirm(`Are you sure you want to delete "${profileName}"?`);
+  if (!confirmed) {
+    return;
+  }
   profiles.splice(safeIndex, 1);
   if (state.advanced.activeProfileIndex >= profiles.length) {
     state.advanced.activeProfileIndex = profiles.length - 1;
@@ -2602,9 +3160,9 @@ function toggleAdvancedProfileFood(profileIndex, foodId, enabled) {
   markAdvancedDirty();
 }
 
-function runSolveOnMainThread(solveInput, options = {}) {
+function runSolveOnMainThread(solveMode, solveInput, options = {}) {
   const startedAt = nowMs();
-  const solveOutput = solveLegalityOnly(solveInput, {
+  const solveOutput = solveByMode(solveMode, solveInput, {
     onProgress: options?.onProgress,
   });
   return {
@@ -2614,7 +3172,7 @@ function runSolveOnMainThread(solveInput, options = {}) {
   };
 }
 
-async function runSolveInWorker(solveInput, options = {}) {
+async function runSolveInWorker(solveMode, solveInput, options = {}) {
   const worker = ensureSolverWorker();
   if (!worker) {
     throw new Error("Web Worker is not available in this browser.");
@@ -2631,6 +3189,7 @@ async function runSolveInWorker(solveInput, options = {}) {
       worker.postMessage({
         type: "solve",
         requestId,
+        solveMode,
         solveInput,
       });
     } catch (error) {
@@ -2645,12 +3204,55 @@ function updateSolveStatus(_meta, statusContext = "", _options = {}) {
   setStatus(context ? `${context} Solve complete.` : "Solve complete.");
 }
 
+async function solveOnceWithWorkerFallback(solveMode, solveInput, onProgress) {
+  if (typeof Worker !== "undefined") {
+    try {
+      const workerResponse = await runSolveInWorker(solveMode, solveInput, {
+        onProgress,
+      });
+      return {
+        solveOutput: workerResponse.solveOutput,
+        solveMeta: {
+          usedWorker: true,
+          elapsedMs: normalizeNonNegativeInteger(workerResponse.elapsedMs, 0),
+        },
+      };
+    } catch (workerError) {
+      console.error(workerError);
+      teardownSolverWorker();
+      const fallback = runSolveOnMainThread(solveMode, solveInput, {
+        onProgress,
+      });
+      return {
+        solveOutput: fallback.solveOutput,
+        solveMeta: {
+          usedWorker: false,
+          elapsedMs: fallback.elapsedMs,
+        },
+      };
+    }
+  }
+
+  const fallback = runSolveOnMainThread(solveMode, solveInput, {
+    onProgress,
+  });
+  return {
+    solveOutput: fallback.solveOutput,
+    solveMeta: {
+      usedWorker: false,
+      elapsedMs: fallback.elapsedMs,
+    },
+  };
+}
+
 async function runSolver(options = {}) {
   if (!state.data) {
     return false;
   }
 
   const solveToken = ++latestSolveToken;
+  const solveMode = resolveSolveMode(options);
+  const advancedActive = isAdvancedSolverMode(solveMode);
   syncSelectedGearMap();
   syncFoodSelection();
   beginSolveLoading(solveToken);
@@ -2661,45 +3263,71 @@ async function runSolver(options = {}) {
     updateSolveLoadingProgress(progress, solveToken);
   };
 
-  const solveInput = buildSolveInput(options);
   let solveOutput = null;
   let solveMeta = {
     usedWorker: false,
     elapsedMs: 0,
   };
+  let advancedFrontierWidenAttempts = 0;
+  let advancedFrontierLimitUsed = normalizeNonNegativeInteger(ADVANCED_FRONTIER_RESULT_LIMIT, 12000);
+  const overallWalltimeGuardMs = Math.max(
+    1,
+    Math.round(
+      normalizeNonNegativeInteger(state?.solve?.timeBudgetMs, 10000) *
+        ADVANCED_FRONTIER_WALLTIME_GUARD_MULTIPLIER,
+    ),
+  );
+  const solveWalltimeStartedAtMs = nowMs();
 
   try {
-    if (typeof Worker !== "undefined") {
-      try {
-        const workerResponse = await runSolveInWorker(solveInput, {
-          onProgress: handleSolveProgress,
-        });
-        solveOutput = workerResponse.solveOutput;
-        solveMeta = {
-          usedWorker: true,
-          elapsedMs: normalizeNonNegativeInteger(workerResponse.elapsedMs, 0),
-        };
-      } catch (workerError) {
-        console.error(workerError);
-        teardownSolverWorker();
-        const fallback = runSolveOnMainThread(solveInput, {
-          onProgress: handleSolveProgress,
-        });
-        solveOutput = fallback.solveOutput;
-        solveMeta = {
-          usedWorker: false,
-          elapsedMs: fallback.elapsedMs,
-        };
+    while (true) {
+      if (advancedActive) {
+        advancedFrontierLimitUsed = Math.min(
+          ADVANCED_FRONTIER_HARD_CAP,
+          Math.max(1, advancedFrontierLimitUsed),
+        );
       }
-    } else {
-      const fallback = runSolveOnMainThread(solveInput, {
-        onProgress: handleSolveProgress,
+
+      const solveInput = buildSolveInputForMode(solveMode, {
+        ...options,
+        frontierResultLimit: advancedActive ? advancedFrontierLimitUsed : undefined,
       });
-      solveOutput = fallback.solveOutput;
-      solveMeta = {
-        usedWorker: false,
-        elapsedMs: fallback.elapsedMs,
-      };
+      const attempt = await solveOnceWithWorkerFallback(solveMode, solveInput, handleSolveProgress);
+      solveOutput = attempt.solveOutput;
+      solveMeta = attempt.solveMeta;
+
+      if (!advancedActive) {
+        break;
+      }
+      if (solveToken !== latestSolveToken) {
+        return false;
+      }
+
+      const frontierRows = Array.isArray(solveOutput?.results) ? solveOutput.results.length : 0;
+      const diagnostics = solveOutput?.diagnostics ?? {};
+      const saturated = frontierRows >= advancedFrontierLimitUsed;
+      const overallElapsedMs = Math.max(0, Math.round(nowMs() - solveWalltimeStartedAtMs));
+      const canWiden =
+        saturated &&
+        diagnostics?.terminatedByTime !== true &&
+        diagnostics?.terminatedEarly !== true &&
+        advancedFrontierWidenAttempts < ADVANCED_FRONTIER_MAX_WIDEN_ATTEMPTS &&
+        advancedFrontierLimitUsed < ADVANCED_FRONTIER_HARD_CAP &&
+        overallElapsedMs < overallWalltimeGuardMs;
+
+      if (!canWiden) {
+        break;
+      }
+
+      const nextLimit = Math.min(
+        ADVANCED_FRONTIER_HARD_CAP,
+        advancedFrontierLimitUsed * ADVANCED_FRONTIER_GROWTH_FACTOR,
+      );
+      if (nextLimit <= advancedFrontierLimitUsed) {
+        break;
+      }
+      advancedFrontierLimitUsed = nextLimit;
+      advancedFrontierWidenAttempts += 1;
     }
   } catch (error) {
     if (solveToken !== latestSolveToken) {
@@ -2719,7 +3347,6 @@ async function runSolver(options = {}) {
 
   state.selectedGearRows = solveOutput.selectedGearRows;
   state.solveDiagnostics = solveOutput.diagnostics;
-  const advancedActive = isAdvancedModeEnabled(options);
   const baseResults = Array.isArray(solveOutput?.results) ? solveOutput.results : [];
   const rawResultsWithFood = advancedActive ? applyAdvancedMode(baseResults) : applyFixedFood(baseResults);
   const maybePostProcessed =
@@ -2730,6 +3357,13 @@ async function runSolver(options = {}) {
   state.results =
     options?.skipDiversify || advancedActive ? nextResults : diversifyDisplayOrderByScoreGp(nextResults);
   state.resultsUi.diffEnabledByPlanKey = {};
+  if (advancedActive) {
+    solveMeta = {
+      ...solveMeta,
+      frontierResultLimit: advancedFrontierLimitUsed,
+      frontierWidenAttempts: advancedFrontierWidenAttempts,
+    };
+  }
   updateSolveStatus(solveMeta, String(options?.statusContext ?? ""), {
     advancedActive,
   });
@@ -2766,7 +3400,8 @@ function render() {
       markSolveDirty();
     },
     onMaxResultsChange: (value) => {
-      state.solve.maxResults = Math.max(1, normalizeNonNegativeInteger(value, state.solve.maxResults));
+      const solveMode = resolveSolveMode();
+      state.solve.maxResults = normalizeMaxResultsForSolveMode(value, solveMode);
       markSolveDirty();
     },
     onTimeBudgetChange: (value) => {
@@ -2843,6 +3478,7 @@ function render() {
     },
     onAdvancedEnabledChange: (enabled) => {
       state.advanced.enabled = Boolean(enabled);
+      applySolveDefaultsForMode(resolveSolveMode());
       if (!state.advanced.enabled) {
         state.savedPlansUi.breakpointCheckViewPlanId = null;
       }
@@ -2874,6 +3510,9 @@ function render() {
     },
     onAdvancedProfileFoodQualityChange: ({ profileIndex, useHq }) => {
       updateAdvancedProfileFoodQuality(profileIndex, useHq);
+    },
+    onAdvancedProfileStatDumpChange: ({ profileIndex, statDump }) => {
+      updateAdvancedProfileStatDump(profileIndex, statDump);
     },
     onAdvancedFoodToggle: ({ profileIndex, foodId, enabled }) => {
       toggleAdvancedProfileFood(profileIndex, foodId, enabled);
@@ -2930,6 +3569,7 @@ async function init() {
     loadedSummary = summarizeProcessedData(state.data);
     loadAdvancedConfig();
     hydrateAdvancedConfigAgainstData();
+    applySolveDefaultsForMode(resolveSolveMode());
     const persistedGearSelection = loadGearSelection();
     if (persistedGearSelection?.useHq != null) {
       state.gear.useHq = persistedGearSelection.useHq;

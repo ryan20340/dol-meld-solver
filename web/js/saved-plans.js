@@ -211,10 +211,10 @@ function takeGearRowForPiece(queuesByKey, piece) {
   return null;
 }
 
-function buildDefaultPlanName(resultIndex, planIndex, row) {
-  const totalGathering = normalizeNonNegativeInt(row?.totalGathering, 0);
-  const totalPerception = normalizeNonNegativeInt(row?.totalPerception, 0);
-  const totalGp = normalizeNonNegativeInt(row?.totalGp, 0);
+function buildDefaultPlanName(resultIndex, planIndex, row, planVariant = null) {
+  const totalGathering = normalizeNonNegativeInt(planVariant?.totalGathering ?? row?.totalGathering, 0);
+  const totalPerception = normalizeNonNegativeInt(planVariant?.totalPerception ?? row?.totalPerception, 0);
+  const totalGp = normalizeNonNegativeInt(planVariant?.totalGp ?? row?.totalGp, 0);
   return `Plan #${resultIndex + 1}.${planIndex + 1} - ${totalGathering}/${totalPerception}/${totalGp}`;
 }
 
@@ -224,6 +224,23 @@ function normalizeTrackedCaps(gearRow) {
     perception: normalizeNonNegativeInt(gearRow?.tracked_meld_caps?.perception, 0),
     gp: normalizeNonNegativeInt(gearRow?.tracked_meld_caps?.gp, 0),
   };
+}
+
+function sumMeldTotalsFromPlanVariant(planVariant) {
+  const totals = {
+    gathering: 0,
+    perception: 0,
+    gp: 0,
+  };
+  const pieces = Array.isArray(planVariant?.pieceMelds) ? planVariant.pieceMelds : [];
+  for (const piece of pieces) {
+    const melds = Array.isArray(piece?.melds) ? piece.melds : [];
+    for (const meld of melds) {
+      const statKey = normalizeStatKey(meld?.stat);
+      totals[statKey] += normalizeNonNegativeInt(meld?.appliedValue, 0);
+    }
+  }
+  return totals;
 }
 
 export function createSavedPlanFromResult({
@@ -250,11 +267,15 @@ export function createSavedPlanFromResult({
     plan?.totalGp ?? row?.totalGp,
     normalizeNonNegativeInt(row?.totalGp, 0),
   );
-  const meldTotals = {
-    gathering: normalizeNonNegativeInt(row?.meldGathering, 0),
-    perception: normalizeNonNegativeInt(row?.meldPerception, 0),
-    gp: normalizeNonNegativeInt(row?.meldGp, 0),
-  };
+  const meldTotalsFromPlan = sumMeldTotalsFromPlanVariant(plan);
+  const usePlanMeldTotals = Array.isArray(plan?.pieceMelds);
+  const meldTotals = usePlanMeldTotals
+    ? meldTotalsFromPlan
+    : {
+        gathering: normalizeNonNegativeInt(row?.meldGathering, 0),
+        perception: normalizeNonNegativeInt(row?.meldPerception, 0),
+        gp: normalizeNonNegativeInt(row?.meldGp, 0),
+      };
   const baseTotalsWithoutMeldsAndFood = {
     gathering: Math.max(0, totalGathering - meldTotals.gathering - foodDelta.gathering),
     perception: Math.max(0, totalPerception - meldTotals.perception - foodDelta.perception),
@@ -276,7 +297,7 @@ export function createSavedPlanFromResult({
 
   return normalizeSavedPlan({
     id: makePlanId(),
-    name: String(customName || buildDefaultPlanName(resultIndex, planIndex, row)),
+    name: String(customName || buildDefaultPlanName(resultIndex, planIndex, row, plan)),
     savedAt: new Date().toISOString(),
     score: normalizeInt(row?.score, 0),
     totalGathering,

@@ -5,6 +5,7 @@ export function createInitialState() {
       name: "Profile 1",
       enabled: true,
       useHq: true,
+      statDump: "none",
       allowedFoodIds: [],
       breakpoints: [],
     },
@@ -33,7 +34,7 @@ export function createInitialState() {
       useHq: true,
     },
     solve: {
-      maxResults: 10,
+      maxResults: 25,
       timeBudgetMs: 10000,
       maxBranches: 5000000,
       useBruteForce: false,

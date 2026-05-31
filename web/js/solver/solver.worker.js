@@ -1,4 +1,5 @@
-import { solveLegalityOnly } from "./engine.js";
+import { solveByMode } from "./solve-dispatch.js";
+import { normalizeSolverMode, SOLVER_MODES } from "./solver-modes.js";
 
 function nowMs() {
   if (typeof performance !== "undefined" && typeof performance.now === "function") {
@@ -14,10 +15,11 @@ self.onmessage = (event) => {
   }
 
   const requestId = payload.requestId ?? null;
+  const solveMode = normalizeSolverMode(payload?.solveMode ?? SOLVER_MODES.NORMAL);
   const startedAtMs = nowMs();
 
   try {
-    const solveOutput = solveLegalityOnly(payload?.solveInput ?? {}, {
+    const solveOutput = solveByMode(solveMode, payload?.solveInput ?? {}, {
       onProgress: (progress) => {
         self.postMessage({
           type: "solve_progress",
