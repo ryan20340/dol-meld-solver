@@ -2895,7 +2895,33 @@ async function triggerSolveAndRender() {
   render();
 }
 
+function installIconHqFallback() {
+  if (typeof document === "undefined") {
+    return;
+  }
+  // Not every item has an HQ icon variant. When the `hq/` asset 404s, swap the
+  // src back to the normal icon (same path without `hq/`) and retry once.
+  // `error` events don't bubble, so we listen in the capture phase.
+  document.addEventListener(
+    "error",
+    (event) => {
+      const img = event.target;
+      if (!(img instanceof HTMLImageElement) || img.dataset.hqFallbackTried === "1") {
+        return;
+      }
+      const src = img.getAttribute("src") || "";
+      if (!src.includes("v2.xivapi.com") || !src.includes("/hq/")) {
+        return;
+      }
+      img.dataset.hqFallbackTried = "1";
+      img.src = src.replace("/hq/", "/");
+    },
+    true,
+  );
+}
+
 async function init() {
+  installIconHqFallback();
   initializeControlsPanelToggle();
   setStatus("Loading processed JSON...");
 
