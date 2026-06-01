@@ -1,22 +1,8 @@
 import { solveLegalityOnly } from "./engine.js";
+import { normalizeNonNegativeInteger } from "../utils/normalize.js";
+import { summarizeTotals } from "../utils/stats.js";
 
 const NORMAL_MODE_MAX_RESULTS_LIMIT = 25;
-
-function normalizeNonNegativeInteger(value, fallback = 0) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    return fallback;
-  }
-  return Math.floor(parsed);
-}
-
-function summarizeTotals(totals) {
-  return {
-    gathering: normalizeNonNegativeInteger(totals?.gathering, 0),
-    perception: normalizeNonNegativeInteger(totals?.perception, 0),
-    gp: normalizeNonNegativeInteger(totals?.gp, 0),
-  };
-}
 
 export function buildNormalSolveInput(state, options = {}) {
   const targetOverride = options?.targetsOverride;

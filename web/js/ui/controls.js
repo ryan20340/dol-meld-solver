@@ -1,5 +1,6 @@
 import { BASE_GATHERER_GP, sumSelectedGearTrackedStats } from "../utils/gear-stats.js";
 import { iconUrlFromRow } from "../utils/icons.js";
+import { normalizeNonNegativeInteger } from "../utils/normalize.js";
 
 const FOOD_STAT_ORDER = Object.freeze(["gathering", "perception", "gp"]);
 const FOOD_STAT_SHORT_LABELS = Object.freeze({
@@ -21,14 +22,6 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
-}
-
-function normalizeNonNegativeInteger(value, fallback = 0) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    return fallback;
-  }
-  return Math.floor(parsed);
 }
 
 function maxResultsLimitForAdvancedEnabled(advancedEnabled) {

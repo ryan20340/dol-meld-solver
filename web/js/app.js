@@ -1,15 +1,35 @@
 import { loadProcessedData, summarizeProcessedData } from "./data-loader.js";
 import { createInitialState } from "./state.js";
+import {
+  ADVANCED_STAT_DUMP,
+  createDefaultBreakpoint,
+  createDefaultProfile,
+  normalizeAdvancedConfig,
+  normalizeAdvancedProfile,
+  normalizeAdvancedStatDump,
+  normalizeBreakpoint,
+} from "./advanced-config.js";
 import { buildAutoSelectedGearSet } from "./solver/engine.js";
 import { ADVANCED_FRONTIER_RESULT_LIMIT, buildAdvancedSolveInput } from "./solver/advanced-mode-solver.js";
 import { buildNormalSolveInput } from "./solver/normal-mode-solver.js";
 import { scoreCandidate } from "./solver/score.js";
 import { solveByMode } from "./solver/solve-dispatch.js";
+import {
+  applyAdvancedMode,
+  buildAdvancedSummaryForTotals,
+  compareAdvancedSummaries,
+  evaluateSavedPlanBreakpointCheck,
+  normalizeSavedPlanBreakpointFoodDraftEntry,
+  selectActiveAdvancedProfiles,
+} from "./solver/advanced-postprocess.js";
 import { isAdvancedSolverMode, SOLVER_MODES } from "./solver/solver-modes.js";
 import { renderControlsPanel } from "./ui/controls.js";
 import { renderGearEditor } from "./ui/gear-editor.js";
 import { renderResultsTable } from "./ui/results-table.js";
+import { computeFoodDeltaForTotals } from "./utils/food.js";
 import { BASE_GATHERER_GP, getGearRowTrackedStats, statSum } from "./utils/gear-stats.js";
+import { normalizeNonNegativeInteger, normalizeOptionalPriority } from "./utils/normalize.js";
+import { hasAnyTargets, STAT_KEYS, summarizeTotals } from "./utils/stats.js";
 import {
   applyDraftToSavedPlan,
   buildAvailableGradesByStat,
@@ -23,7 +43,6 @@ import {
   persistSavedPlans,
 } from "./saved-plans.js";
 
-const STAT_KEYS = Object.freeze(["gathering", "perception", "gp"]);
 const STAT_LABELS = Object.freeze({
   gathering: "Gathering",
   perception: "Perception",
@@ -51,15 +70,6 @@ const CONTROLS_COLLAPSE_STORAGE_KEY = "dol-meld-solver-controls-collapsed";
 const ADVANCED_CONFIG_STORAGE_KEY = "dol-meld-solver-advanced-config-v1";
 const GEARSET_STORAGE_KEY = "dol-meld-solver-gearset-v1";
 const ADVANCED_PRESET_75_URL = new URL("./presets/current-advanced-preset.json", import.meta.url);
-const UNNUMBERED_PRIORITY_KEY = "__unnumbered__";
-const ADVANCED_STAT_DUMP = Object.freeze({
-  NONE: "none",
-  GATHERING: "gathering",
-  PERCEPTION: "perception",
-  GP: "gp",
-  EVEN: "even",
-});
-const ADVANCED_STAT_DUMP_MODES = new Set(Object.values(ADVANCED_STAT_DUMP));
 const ADVANCED_FRONTIER_GROWTH_FACTOR = 2;
 const ADVANCED_FRONTIER_HARD_CAP = 96000;
 const ADVANCED_FRONTIER_MAX_WIDEN_ATTEMPTS = 3;
@@ -67,41 +77,6 @@ const ADVANCED_FRONTIER_WALLTIME_GUARD_MULTIPLIER = 1.6;
 const NORMAL_MODE_MAX_RESULTS_LIMIT = 25;
 const ADVANCED_MODE_MAX_RESULTS_LIMIT = 10;
 const ADVANCED_MODE_VARIANT_LIMIT = 5;
-
-function createDefaultBreakpoint(index = 1) {
-  const safeIndex = Math.max(1, normalizeNonNegativeInteger(index, 1));
-  return {
-    id: `bp_${safeIndex}`,
-    name: `Breakpoint ${safeIndex}`,
-    stat: "gathering",
-    value: 0,
-    priority: null,
-    enabled: true,
-  };
-}
-
-function createDefaultProfile(index = 1) {
-  const safeIndex = Math.max(1, normalizeNonNegativeInteger(index, 1));
-  return {
-    id: `profile_${safeIndex}`,
-    name: `Profile ${safeIndex}`,
-    enabled: true,
-    useHq: true,
-    statDump: ADVANCED_STAT_DUMP.NONE,
-    allowedFoodIds: [],
-    breakpoints: [],
-  };
-}
-
-function buildDefaultAdvancedState() {
-  return {
-    enabled: false,
-    activeProfileIndex: 0,
-    nextProfileId: 2,
-    nextBreakpointId: 1,
-    profiles: [createDefaultProfile(1)],
-  };
-}
 
 const state = createInitialState();
 let loadedSummary = null;
@@ -130,6 +105,99 @@ let solveLoadingProgress = {
   visitedBranches: 0,
 };
 
+function canUseLocalStorage() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  try {
+    return Boolean(window.localStorage);
+  } catch (_error) {
+    return false;
+  }
+}
+
+function readLocalStorageItem(key, warningMessage) {
+  if (!canUseLocalStorage()) {
+    return null;
+  }
+  try {
+    return window.localStorage.getItem(key);
+  } catch (error) {
+    if (warningMessage) {
+      console.warn(warningMessage, error);
+    }
+    return null;
+  }
+}
+
+function writeLocalStorageItem(key, value, warningMessage) {
+  if (!canUseLocalStorage()) {
+    return false;
+  }
+  try {
+    window.localStorage.setItem(key, value);
+    return true;
+  } catch (error) {
+    if (warningMessage) {
+      console.warn(warningMessage, error);
+    }
+    return false;
+  }
+}
+
+function readLocalStorageJson(key, warningMessage) {
+  const raw = readLocalStorageItem(key, warningMessage);
+  if (!raw) {
+    return null;
+  }
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    if (warningMessage) {
+      console.warn(warningMessage, error);
+    }
+    return null;
+  }
+}
+
+function writeLocalStorageJson(key, value, warningMessage) {
+  return writeLocalStorageItem(key, JSON.stringify(value), warningMessage);
+}
+
+function normalizeRingSlotMap(map) {
+  const normalized = map && typeof map === "object" ? { ...map } : {};
+
+  if (Object.prototype.hasOwnProperty.call(normalized, "ring")) {
+    const ringId = normalizeNonNegativeInteger(normalized.ring, 0);
+    if (!Object.prototype.hasOwnProperty.call(normalized, "ring_left")) {
+      normalized.ring_left = ringId;
+    }
+    if (!Object.prototype.hasOwnProperty.call(normalized, "ring_right")) {
+      normalized.ring_right = ringId;
+    }
+    delete normalized.ring;
+  }
+
+  const hasLeft = Object.prototype.hasOwnProperty.call(normalized, "ring_left");
+  const hasRight = Object.prototype.hasOwnProperty.call(normalized, "ring_right");
+  if (hasLeft && !hasRight) {
+    normalized.ring_right = normalizeNonNegativeInteger(normalized.ring_left, 0);
+  }
+  if (hasRight && !hasLeft) {
+    normalized.ring_left = normalizeNonNegativeInteger(normalized.ring_right, 0);
+  }
+
+  return normalized;
+}
+
+function setRingSelection(map, leftRingId, rightRingId = leftRingId) {
+  if (!map || typeof map !== "object") {
+    return;
+  }
+  map.ring_left = normalizeNonNegativeInteger(leftRingId, 0);
+  map.ring_right = normalizeNonNegativeInteger(rightRingId, map.ring_left);
+}
+
 function applyControlsPanelVisibility() {
   if (!appMainElement || !controlsToggleElement) {
     return;
@@ -154,29 +222,19 @@ function setControlsCollapsed(collapsed, options = {}) {
     return;
   }
 
-  if (typeof window === "undefined" || !window.localStorage) {
-    return;
-  }
-
-  try {
-    window.localStorage.setItem(
-      CONTROLS_COLLAPSE_STORAGE_KEY,
-      state.ui.controlsCollapsed ? "1" : "0",
-    );
-  } catch (error) {
-    console.warn("Unable to persist controls panel toggle state.", error);
-  }
+  writeLocalStorageItem(
+    CONTROLS_COLLAPSE_STORAGE_KEY,
+    state.ui.controlsCollapsed ? "1" : "0",
+    "Unable to persist controls panel toggle state.",
+  );
 }
 
 function initializeControlsPanelToggle() {
-  if (typeof window !== "undefined" && window.localStorage) {
-    try {
-      const persisted = window.localStorage.getItem(CONTROLS_COLLAPSE_STORAGE_KEY);
-      state.ui.controlsCollapsed = persisted === "1";
-    } catch (error) {
-      console.warn("Unable to read controls panel toggle state.", error);
-    }
-  }
+  const persisted = readLocalStorageItem(
+    CONTROLS_COLLAPSE_STORAGE_KEY,
+    "Unable to read controls panel toggle state.",
+  );
+  state.ui.controlsCollapsed = persisted === "1";
 
   if (controlsToggleElement) {
     controlsToggleElement.addEventListener("click", () => {
@@ -280,55 +338,8 @@ function endSolveLoading(solveToken) {
   renderSolveLoading();
 }
 
-function normalizeNonNegativeInteger(value, fallback = 0) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    return fallback;
-  }
-  return Math.floor(parsed);
-}
-
-function normalizeOptionalPriority(value) {
-  if (value == null) {
-    return null;
-  }
-  const asText = String(value).trim();
-  if (asText === "") {
-    return null;
-  }
-  const parsed = Number(asText);
-  if (!Number.isFinite(parsed)) {
-    return null;
-  }
-  return Math.floor(parsed);
-}
-
-function normalizeAdvancedStatDump(value, fallback = ADVANCED_STAT_DUMP.NONE) {
-  const normalizedFallback = ADVANCED_STAT_DUMP_MODES.has(String(fallback ?? "").trim().toLowerCase())
-    ? String(fallback).trim().toLowerCase()
-    : ADVANCED_STAT_DUMP.NONE;
-  const raw = String(value ?? "").trim().toLowerCase();
-  if (ADVANCED_STAT_DUMP_MODES.has(raw)) {
-    return raw;
-  }
-  return normalizedFallback;
-}
-
 function slotLabel(slotKey) {
   return SLOT_LABELS[String(slotKey ?? "")] ?? String(slotKey ?? "Unknown slot");
-}
-
-function summarizeTotals(totals) {
-  return {
-    gathering: normalizeNonNegativeInteger(totals?.gathering, 0),
-    perception: normalizeNonNegativeInteger(totals?.perception, 0),
-    gp: normalizeNonNegativeInteger(totals?.gp, 0),
-  };
-}
-
-function hasAnyTargets(targets) {
-  const safe = summarizeTotals(targets);
-  return safe.gathering + safe.perception + safe.gp > 0;
 }
 
 function savedPlanTotals(savedPlan) {
@@ -376,123 +387,39 @@ function allFoodIds() {
     .filter((itemId) => itemId > 0);
 }
 
-function normalizeBreakpoint(raw, fallbackIndex = 1) {
-  const fallback = createDefaultBreakpoint(fallbackIndex);
-  const rawStat = String(raw?.stat ?? "");
-  const stat = STAT_KEYS.includes(rawStat) ? rawStat : fallback.stat;
-  return {
-    id: String(raw?.id ?? fallback.id),
-    name: String(raw?.name ?? fallback.name).trim() || fallback.name,
-    stat,
-    value: normalizeNonNegativeInteger(raw?.value, 0),
-    priority: normalizeOptionalPriority(raw?.priority),
-    enabled: raw?.enabled !== false,
-  };
-}
-
-function normalizeAdvancedProfile(raw, fallbackIndex = 1, options = {}) {
-  const fallback = createDefaultProfile(fallbackIndex);
-  const validFoodIds = new Set(allFoodIds());
-  const keepEmptyFoodSelection = options?.keepEmptyFoodSelection === true;
-
-  const hasExplicitFoodSelection = Array.isArray(raw?.allowedFoodIds);
-  const rawAllowedFoodIds = hasExplicitFoodSelection
-    ? raw.allowedFoodIds.map((itemId) => normalizeNonNegativeInteger(itemId, 0)).filter((itemId) => validFoodIds.has(itemId))
-    : [];
-  const uniqueAllowedFoodIds = Array.from(new Set(rawAllowedFoodIds));
-  const allowedFoodIds =
-    uniqueAllowedFoodIds.length > 0
-      ? uniqueAllowedFoodIds
-      : keepEmptyFoodSelection && hasExplicitFoodSelection
-        ? []
-        : allFoodIds();
-
-  const rawBreakpoints = Array.isArray(raw?.breakpoints) ? raw.breakpoints : [];
-  return {
-    id: String(raw?.id ?? fallback.id),
-    name: String(raw?.name ?? fallback.name).trim() || fallback.name,
-    enabled: raw?.enabled !== false,
-    useHq: raw?.useHq !== false,
-    statDump: normalizeAdvancedStatDump(raw?.statDump, fallback.statDump),
-    allowedFoodIds,
-    breakpoints: rawBreakpoints.map((bp, idx) => normalizeBreakpoint(bp, idx + 1)),
-  };
-}
-
-function normalizeAdvancedConfig(raw, options = {}) {
-  const fallback = buildDefaultAdvancedState();
-  const rawProfiles = Array.isArray(raw?.profiles) ? raw.profiles : [];
-  if (rawProfiles.length === 0) {
-    rawProfiles.push(createDefaultProfile(1));
-  }
-
-  const profiles = rawProfiles.map((profile, index) =>
-    normalizeAdvancedProfile(profile, index + 1, options),
-  );
-
-  const maxProfileIndex = Math.max(0, profiles.length - 1);
-  const activeProfileIndex = Math.min(
-    maxProfileIndex,
-    normalizeNonNegativeInteger(raw?.activeProfileIndex, fallback.activeProfileIndex),
-  );
-  let nextProfileId = normalizeNonNegativeInteger(raw?.nextProfileId, fallback.nextProfileId);
-  let nextBreakpointId = normalizeNonNegativeInteger(raw?.nextBreakpointId, fallback.nextBreakpointId);
-
-  for (const profile of profiles) {
-    const profileIdMatch = String(profile?.id ?? "").match(/^profile_(\d+)$/);
-    if (profileIdMatch) {
-      const seenProfileIndex = normalizeNonNegativeInteger(profileIdMatch[1], 0);
-      nextProfileId = Math.max(nextProfileId, seenProfileIndex + 1);
-    }
-    for (const breakpoint of profile.breakpoints) {
-      const idMatch = String(breakpoint?.id ?? "").match(/^bp_(\d+)$/);
-      if (!idMatch) {
-        continue;
-      }
-      const seenIndex = normalizeNonNegativeInteger(idMatch[1], 0);
-      nextBreakpointId = Math.max(nextBreakpointId, seenIndex + 1);
-    }
-  }
-
-  return {
-    enabled: raw?.enabled === true,
-    activeProfileIndex,
-    nextProfileId: Math.max(1, nextProfileId),
-    nextBreakpointId: Math.max(1, nextBreakpointId),
-    profiles,
-  };
+function normalizeAdvancedConfigAgainstData(raw, options = {}) {
+  return normalizeAdvancedConfig(raw, {
+    ...options,
+    allFoodIds: allFoodIds(),
+  });
 }
 
 function persistAdvancedConfig() {
-  if (typeof window === "undefined" || !window.localStorage) {
-    return;
-  }
-  try {
-    window.localStorage.setItem(ADVANCED_CONFIG_STORAGE_KEY, JSON.stringify(state.advanced));
-  } catch (error) {
-    console.warn("Unable to persist advanced configuration.", error);
-  }
+  writeLocalStorageJson(
+    ADVANCED_CONFIG_STORAGE_KEY,
+    state.advanced,
+    "Unable to persist advanced configuration.",
+  );
 }
 
 function loadAdvancedConfig() {
-  if (typeof window === "undefined" || !window.localStorage) {
+  const parsed = readLocalStorageJson(
+    ADVANCED_CONFIG_STORAGE_KEY,
+    "Unable to read advanced configuration; using defaults.",
+  );
+  if (parsed == null) {
+    state.advanced = normalizeAdvancedConfigAgainstData(state.advanced, {
+      keepEmptyFoodSelection: false,
+    });
     return;
   }
   try {
-    const raw = window.localStorage.getItem(ADVANCED_CONFIG_STORAGE_KEY);
-    if (!raw) {
-      state.advanced = normalizeAdvancedConfig(state.advanced, {
-        keepEmptyFoodSelection: false,
-      });
-      return;
-    }
-    const parsed = JSON.parse(raw);
-    state.advanced = normalizeAdvancedConfig(parsed, {
+    state.advanced = normalizeAdvancedConfigAgainstData(parsed, {
       keepEmptyFoodSelection: true,
     });
   } catch (error) {
     console.warn("Unable to read advanced configuration; using defaults.", error);
-    state.advanced = normalizeAdvancedConfig(state.advanced, {
+    state.advanced = normalizeAdvancedConfigAgainstData(state.advanced, {
       keepEmptyFoodSelection: false,
     });
   }
@@ -516,76 +443,43 @@ function normalizePersistedGearSelectionMap(raw) {
     normalized[slot] = itemId;
   }
 
-  if (Object.prototype.hasOwnProperty.call(normalized, "ring")) {
-    const ringId = normalizeNonNegativeInteger(normalized.ring, 0);
-    if (!Object.prototype.hasOwnProperty.call(normalized, "ring_left")) {
-      normalized.ring_left = ringId;
-    }
-    if (!Object.prototype.hasOwnProperty.call(normalized, "ring_right")) {
-      normalized.ring_right = ringId;
-    }
-    delete normalized.ring;
-  }
-
-  if (
-    Object.prototype.hasOwnProperty.call(normalized, "ring_left") &&
-    !Object.prototype.hasOwnProperty.call(normalized, "ring_right")
-  ) {
-    normalized.ring_right = normalizeNonNegativeInteger(normalized.ring_left, 0);
-  }
-  if (
-    Object.prototype.hasOwnProperty.call(normalized, "ring_right") &&
-    !Object.prototype.hasOwnProperty.call(normalized, "ring_left")
-  ) {
-    normalized.ring_left = normalizeNonNegativeInteger(normalized.ring_right, 0);
-  }
-
-  return normalized;
+  return normalizeRingSlotMap(normalized);
 }
 
 function persistGearSelection() {
-  if (typeof window === "undefined" || !window.localStorage) {
-    return;
-  }
-  try {
-    const payload = {
-      selectedGearBySlot: normalizePersistedGearSelectionMap(state.selectedGearBySlot),
-      useHq: state?.gear?.useHq !== false,
-    };
-    window.localStorage.setItem(GEARSET_STORAGE_KEY, JSON.stringify(payload));
-  } catch (error) {
-    console.warn("Unable to persist gearset selection.", error);
-  }
+  const payload = {
+    selectedGearBySlot: normalizePersistedGearSelectionMap(state.selectedGearBySlot),
+    useHq: state?.gear?.useHq !== false,
+  };
+  writeLocalStorageJson(
+    GEARSET_STORAGE_KEY,
+    payload,
+    "Unable to persist gearset selection.",
+  );
 }
 
 function loadGearSelection() {
-  if (typeof window === "undefined" || !window.localStorage) {
+  const parsed = readLocalStorageJson(
+    GEARSET_STORAGE_KEY,
+    "Unable to read persisted gearset selection; using defaults.",
+  );
+  if (parsed == null) {
     return null;
   }
-  try {
-    const raw = window.localStorage.getItem(GEARSET_STORAGE_KEY);
-    if (!raw) {
-      return null;
-    }
-    const parsed = JSON.parse(raw);
-    const selectedGearBySlot = normalizePersistedGearSelectionMap(parsed?.selectedGearBySlot);
-    const hasSelectedGear = Object.keys(selectedGearBySlot).length > 0;
-    const hasUseHq = parsed?.useHq === true || parsed?.useHq === false;
-    if (!hasSelectedGear && !hasUseHq) {
-      return null;
-    }
-    return {
-      selectedGearBySlot: hasSelectedGear ? selectedGearBySlot : null,
-      useHq: hasUseHq ? parsed.useHq === true : null,
-    };
-  } catch (error) {
-    console.warn("Unable to read persisted gearset selection; using defaults.", error);
+  const selectedGearBySlot = normalizePersistedGearSelectionMap(parsed?.selectedGearBySlot);
+  const hasSelectedGear = Object.keys(selectedGearBySlot).length > 0;
+  const hasUseHq = parsed?.useHq === true || parsed?.useHq === false;
+  if (!hasSelectedGear && !hasUseHq) {
     return null;
   }
+  return {
+    selectedGearBySlot: hasSelectedGear ? selectedGearBySlot : null,
+    useHq: hasUseHq ? parsed.useHq === true : null,
+  };
 }
 
 function hydrateAdvancedConfigAgainstData() {
-  state.advanced = normalizeAdvancedConfig(state.advanced, {
+  state.advanced = normalizeAdvancedConfigAgainstData(state.advanced, {
     keepEmptyFoodSelection: true,
   });
 }
@@ -616,7 +510,7 @@ async function applyAdvancedPreset75() {
       throw new Error('Preset is missing a non-empty "profiles" array.');
     }
 
-    state.advanced = normalizeAdvancedConfig(
+    state.advanced = normalizeAdvancedConfigAgainstData(
       {
         ...advancedPreset,
         enabled: true,
@@ -646,14 +540,7 @@ function buildDefaultSelectionMap() {
     defaults = buildAutoSelectedGearSet(eligibleRows, { useGearHq: state.gear.useHq });
   }
 
-  const defaultsBySlot = Object.fromEntries(defaults.map((row) => [row.slot, Number(row.id)]));
-  if (Object.prototype.hasOwnProperty.call(defaultsBySlot, "ring")) {
-    const ringId = normalizeNonNegativeInteger(defaultsBySlot.ring, 0);
-    defaultsBySlot.ring_left = ringId;
-    defaultsBySlot.ring_right = ringId;
-    delete defaultsBySlot.ring;
-  }
-  return defaultsBySlot;
+  return normalizeRingSlotMap(Object.fromEntries(defaults.map((row) => [row.slot, Number(row.id)])));
 }
 
 function syncSelectedGearMap() {
@@ -729,8 +616,7 @@ function syncSelectedGearMap() {
       selectedMap.ring_right,
       rightDefaultId,
     );
-    nextMap.ring_left = leftRingId;
-    nextMap.ring_right = rightRingId;
+    setRingSelection(nextMap, leftRingId, rightRingId);
   }
 
   state.selectedGearBySlot = nextMap;
@@ -773,50 +659,6 @@ function getSelectedFoodRow() {
   return getFoodRows().find((row) => Number(row.item_id) === selectedId) ?? null;
 }
 
-function foodRowByItemId(itemId) {
-  const safeItemId = normalizeNonNegativeInteger(itemId, 0);
-  if (safeItemId <= 0) {
-    return null;
-  }
-  return getFoodRows().find((row) => normalizeNonNegativeInteger(row?.item_id, 0) === safeItemId) ?? null;
-}
-
-function computeFoodDeltaForTotals(totals, foodRow, useHq) {
-  const deltas = {
-    gathering: 0,
-    perception: 0,
-    gp: 0,
-  };
-  if (!foodRow || !Array.isArray(foodRow.effects)) {
-    return deltas;
-  }
-
-  for (const effect of foodRow.effects) {
-    const statKey = effect.stat;
-    if (!STAT_KEYS.includes(statKey)) {
-      continue;
-    }
-
-    const value = useHq && foodRow.can_be_hq ? Number(effect.hq_value) || 0 : Number(effect.nq_value) || 0;
-    const maxCap = useHq && foodRow.can_be_hq ? Number(effect.hq_max) || 0 : Number(effect.nq_max) || 0;
-    const baseStat = Number(totals?.[statKey]) || 0;
-
-    let delta = 0;
-    if (effect.is_relative) {
-      delta = Math.floor((baseStat * value) / 100);
-    } else {
-      delta = value;
-    }
-
-    if (maxCap > 0) {
-      delta = Math.min(delta, maxCap);
-    }
-    deltas[statKey] += Math.max(0, delta);
-  }
-
-  return deltas;
-}
-
 function totalsMeetTargets(totals) {
   const gatheringTarget = normalizeNonNegativeInteger(state.targets.gathering, 0);
   const perceptionTarget = normalizeNonNegativeInteger(state.targets.perception, 0);
@@ -838,810 +680,6 @@ function isAdvancedModeEnabled(options = {}) {
     return false;
   }
   return state?.advanced?.enabled === true;
-}
-
-function activeAdvancedProfiles() {
-  const profiles = Array.isArray(state?.advanced?.profiles) ? state.advanced.profiles : [];
-  return profiles.filter((profile) => profile?.enabled !== false);
-}
-
-function enabledBreakpoints(profile) {
-  const raw = Array.isArray(profile?.breakpoints) ? profile.breakpoints : [];
-  return raw
-    .map((bp, index) => normalizeBreakpoint(bp, index + 1))
-    .filter((bp) => bp.enabled && STAT_KEYS.includes(bp.stat) && bp.value > 0);
-}
-
-function breakpointHit(updatedTotals, breakpoint) {
-  const stat = String(breakpoint?.stat ?? "");
-  const value = normalizeNonNegativeInteger(breakpoint?.value, 0);
-  if (!STAT_KEYS.includes(stat) || value === 0) {
-    return false;
-  }
-  return (Number(updatedTotals?.[stat]) || 0) >= value;
-}
-
-function priorityKey(priority) {
-  return priority == null ? UNNUMBERED_PRIORITY_KEY : String(priority);
-}
-
-function buildPriorityLedger(breakpointResults) {
-  const rows = Array.isArray(breakpointResults) ? breakpointResults : [];
-  const hitByKey = Object.create(null);
-  const enabledByKey = Object.create(null);
-  const numericLevels = new Set();
-
-  for (const row of rows) {
-    const priority = normalizeOptionalPriority(row?.priority);
-    const key = priorityKey(priority);
-    enabledByKey[key] = (enabledByKey[key] ?? 0) + 1;
-    if (row?.hit) {
-      hitByKey[key] = (hitByKey[key] ?? 0) + 1;
-    }
-    if (priority != null) {
-      numericLevels.add(priority);
-    }
-  }
-
-  return {
-    orderedNumericLevels: Array.from(numericLevels).sort((left, right) => right - left),
-    hitByKey,
-    enabledByKey,
-  };
-}
-
-function comparePriorityLedgers(leftLedger, rightLedger) {
-  const leftLevels = Array.isArray(leftLedger?.orderedNumericLevels) ? leftLedger.orderedNumericLevels : [];
-  const rightLevels = Array.isArray(rightLedger?.orderedNumericLevels) ? rightLedger.orderedNumericLevels : [];
-  const allNumericLevels = Array.from(new Set([...leftLevels, ...rightLevels])).sort((left, right) => right - left);
-
-  for (const level of allNumericLevels) {
-    const levelKey = String(level);
-    const hitDiff = (Number(rightLedger?.hitByKey?.[levelKey]) || 0) - (Number(leftLedger?.hitByKey?.[levelKey]) || 0);
-    if (hitDiff !== 0) {
-      return hitDiff;
-    }
-  }
-
-  const unnumberedHitDiff =
-    (Number(rightLedger?.hitByKey?.[UNNUMBERED_PRIORITY_KEY]) || 0) -
-    (Number(leftLedger?.hitByKey?.[UNNUMBERED_PRIORITY_KEY]) || 0);
-  if (unnumberedHitDiff !== 0) {
-    return unnumberedHitDiff;
-  }
-
-  return 0;
-}
-
-function mergePriorityLedgers(ledgers) {
-  const rows = Array.isArray(ledgers) ? ledgers : [];
-  const aggregateHitByKey = Object.create(null);
-  const aggregateEnabledByKey = Object.create(null);
-  const numericLevels = new Set();
-
-  for (const ledger of rows) {
-    const orderedLevels = Array.isArray(ledger?.orderedNumericLevels) ? ledger.orderedNumericLevels : [];
-    for (const level of orderedLevels) {
-      numericLevels.add(level);
-      const key = String(level);
-      aggregateHitByKey[key] = (aggregateHitByKey[key] ?? 0) + (Number(ledger?.hitByKey?.[key]) || 0);
-      aggregateEnabledByKey[key] = (aggregateEnabledByKey[key] ?? 0) + (Number(ledger?.enabledByKey?.[key]) || 0);
-    }
-
-    aggregateHitByKey[UNNUMBERED_PRIORITY_KEY] =
-      (aggregateHitByKey[UNNUMBERED_PRIORITY_KEY] ?? 0) +
-      (Number(ledger?.hitByKey?.[UNNUMBERED_PRIORITY_KEY]) || 0);
-    aggregateEnabledByKey[UNNUMBERED_PRIORITY_KEY] =
-      (aggregateEnabledByKey[UNNUMBERED_PRIORITY_KEY] ?? 0) +
-      (Number(ledger?.enabledByKey?.[UNNUMBERED_PRIORITY_KEY]) || 0);
-  }
-
-  return {
-    orderedNumericLevels: Array.from(numericLevels).sort((left, right) => right - left),
-    hitByKey: aggregateHitByKey,
-    enabledByKey: aggregateEnabledByKey,
-  };
-}
-
-function allowedFoodRowsForProfile(profile) {
-  const rows = getFoodRows();
-  const allowedIds = new Set(
-    (Array.isArray(profile?.allowedFoodIds) ? profile.allowedFoodIds : [])
-      .map((itemId) => normalizeNonNegativeInteger(itemId, 0))
-      .filter((itemId) => itemId > 0),
-  );
-  if (allowedIds.size === 0) {
-    return [];
-  }
-  return rows.filter((row) => allowedIds.has(normalizeNonNegativeInteger(row?.item_id, 0)));
-}
-
-function highestBreakpointTargetsByStat(profile, breakpoints = null) {
-  const targets = {
-    gathering: 0,
-    perception: 0,
-    gp: 0,
-  };
-  const rows = Array.isArray(breakpoints) ? breakpoints : enabledBreakpoints(profile);
-  for (const breakpoint of rows) {
-    const stat = String(breakpoint?.stat ?? "");
-    if (!STAT_KEYS.includes(stat)) {
-      continue;
-    }
-    targets[stat] = Math.max(targets[stat], normalizeNonNegativeInteger(breakpoint?.value, 0));
-  }
-  return targets;
-}
-
-function computeStatDumpSurplus(updatedTotals, breakpointTargets) {
-  const gathering = Math.max(
-    0,
-    normalizeNonNegativeInteger(updatedTotals?.gathering, 0) -
-      normalizeNonNegativeInteger(breakpointTargets?.gathering, 0),
-  );
-  const perception = Math.max(
-    0,
-    normalizeNonNegativeInteger(updatedTotals?.perception, 0) -
-      normalizeNonNegativeInteger(breakpointTargets?.perception, 0),
-  );
-  const gp = Math.max(
-    0,
-    normalizeNonNegativeInteger(updatedTotals?.gp, 0) -
-      normalizeNonNegativeInteger(breakpointTargets?.gp, 0),
-  );
-  const total = gathering + perception + gp;
-  const min = Math.min(gathering, perception, gp);
-  const max = Math.max(gathering, perception, gp);
-  const spread = max - min;
-  return {
-    gathering,
-    perception,
-    gp,
-    total,
-    min,
-    max,
-    spread,
-  };
-}
-
-function statDumpPreferenceScore(statDump, surplus) {
-  const mode = normalizeAdvancedStatDump(statDump, ADVANCED_STAT_DUMP.NONE);
-  const safe = {
-    gathering: normalizeNonNegativeInteger(surplus?.gathering, 0),
-    perception: normalizeNonNegativeInteger(surplus?.perception, 0),
-    gp: normalizeNonNegativeInteger(surplus?.gp, 0),
-    total: normalizeNonNegativeInteger(surplus?.total, 0),
-    min: normalizeNonNegativeInteger(surplus?.min, 0),
-    spread: normalizeNonNegativeInteger(surplus?.spread, 0),
-  };
-  if (mode === ADVANCED_STAT_DUMP.GATHERING) {
-    return safe.gathering * 1_000_000 + safe.total * 1_000 + safe.min;
-  }
-  if (mode === ADVANCED_STAT_DUMP.PERCEPTION) {
-    return safe.perception * 1_000_000 + safe.total * 1_000 + safe.min;
-  }
-  if (mode === ADVANCED_STAT_DUMP.GP) {
-    return safe.gp * 1_000_000 + safe.total * 1_000 + safe.min;
-  }
-  if (mode === ADVANCED_STAT_DUMP.NONE) {
-    return 0;
-  }
-  return safe.min * 1_000_000 - safe.spread * 1_000 + safe.total;
-}
-
-function compareStatDumpPreference(leftOption, rightOption, statDump) {
-  const mode = normalizeAdvancedStatDump(statDump, ADVANCED_STAT_DUMP.NONE);
-  if (mode === ADVANCED_STAT_DUMP.NONE) {
-    return 0;
-  }
-  const leftSurplus = leftOption?.statDumpSurplus ?? {};
-  const rightSurplus = rightOption?.statDumpSurplus ?? {};
-  const scoreDiff =
-    (Number(rightOption?.statDumpPreferenceScore) || 0) -
-    (Number(leftOption?.statDumpPreferenceScore) || 0);
-  if (scoreDiff !== 0) {
-    return scoreDiff;
-  }
-
-  if (mode === ADVANCED_STAT_DUMP.GATHERING) {
-    const targetDiff = (Number(rightSurplus?.gathering) || 0) - (Number(leftSurplus?.gathering) || 0);
-    if (targetDiff !== 0) {
-      return targetDiff;
-    }
-  } else if (mode === ADVANCED_STAT_DUMP.PERCEPTION) {
-    const targetDiff = (Number(rightSurplus?.perception) || 0) - (Number(leftSurplus?.perception) || 0);
-    if (targetDiff !== 0) {
-      return targetDiff;
-    }
-  } else if (mode === ADVANCED_STAT_DUMP.GP) {
-    const targetDiff = (Number(rightSurplus?.gp) || 0) - (Number(leftSurplus?.gp) || 0);
-    if (targetDiff !== 0) {
-      return targetDiff;
-    }
-  } else {
-    const minDiff = (Number(rightSurplus?.min) || 0) - (Number(leftSurplus?.min) || 0);
-    if (minDiff !== 0) {
-      return minDiff;
-    }
-    const spreadDiff = (Number(leftSurplus?.spread) || 0) - (Number(rightSurplus?.spread) || 0);
-    if (spreadDiff !== 0) {
-      return spreadDiff;
-    }
-  }
-
-  return (Number(rightSurplus?.total) || 0) - (Number(leftSurplus?.total) || 0);
-}
-
-function compareProfileFoodOptions(left, right, profile) {
-  const priorityDiff = comparePriorityLedgers(left?.priorityLedger, right?.priorityLedger);
-  if (priorityDiff !== 0) {
-    return priorityDiff;
-  }
-  const hitDiff = (Number(right?.hitCount) || 0) - (Number(left?.hitCount) || 0);
-  if (hitDiff !== 0) {
-    return hitDiff;
-  }
-  const dumpDiff = compareStatDumpPreference(left, right, profile?.statDump);
-  if (dumpDiff !== 0) {
-    return dumpDiff;
-  }
-  const sumDiff = (Number(right?.statSum) || 0) - (Number(left?.statSum) || 0);
-  if (sumDiff !== 0) {
-    return sumDiff;
-  }
-  const gatheringDiff =
-    normalizeNonNegativeInteger(right?.updatedTotals?.gathering, 0) -
-    normalizeNonNegativeInteger(left?.updatedTotals?.gathering, 0);
-  if (gatheringDiff !== 0) {
-    return gatheringDiff;
-  }
-  const perceptionDiff =
-    normalizeNonNegativeInteger(right?.updatedTotals?.perception, 0) -
-    normalizeNonNegativeInteger(left?.updatedTotals?.perception, 0);
-  if (perceptionDiff !== 0) {
-    return perceptionDiff;
-  }
-  const gpDiff =
-    normalizeNonNegativeInteger(right?.updatedTotals?.gp, 0) -
-    normalizeNonNegativeInteger(left?.updatedTotals?.gp, 0);
-  if (gpDiff !== 0) {
-    return gpDiff;
-  }
-  return normalizeNonNegativeInteger(left?.food?.itemId, 0) - normalizeNonNegativeInteger(right?.food?.itemId, 0);
-}
-
-function buildProfileFoodOption(baseTotals, profile, foodRow) {
-  const useHq = Boolean(profile?.useHq && foodRow?.can_be_hq);
-  const delta = computeFoodDeltaForTotals(baseTotals, foodRow, useHq);
-  const updatedTotals = {
-    gathering: (Number(baseTotals?.gathering) || 0) + delta.gathering,
-    perception: (Number(baseTotals?.perception) || 0) + delta.perception,
-    gp: (Number(baseTotals?.gp) || 0) + delta.gp,
-  };
-  const breakpoints = enabledBreakpoints(profile);
-  const breakpointTargets = highestBreakpointTargetsByStat(profile, breakpoints);
-  const breakpointResults = breakpoints.map((breakpoint) => ({
-    ...breakpoint,
-    hit: breakpointHit(updatedTotals, breakpoint),
-  }));
-  const priorityLedger = buildPriorityLedger(breakpointResults);
-  const statDump = normalizeAdvancedStatDump(profile?.statDump, ADVANCED_STAT_DUMP.NONE);
-  const statDumpSurplus = computeStatDumpSurplus(updatedTotals, breakpointTargets);
-  const hitCount = breakpointResults.reduce((count, row) => count + (row.hit ? 1 : 0), 0);
-  const statSum =
-    normalizeNonNegativeInteger(updatedTotals.gathering, 0) +
-    normalizeNonNegativeInteger(updatedTotals.perception, 0) +
-    normalizeNonNegativeInteger(updatedTotals.gp, 0);
-
-  return {
-    hitCount,
-    enabledCount: breakpointResults.length,
-    statSum,
-    statDump,
-    breakpointTargets,
-    statDumpSurplus,
-    statDumpPreferenceScore: statDumpPreferenceScore(statDump, statDumpSurplus),
-    updatedTotals,
-    priorityLedger,
-    breakpointResults,
-    food: foodRow
-      ? {
-          itemId: normalizeNonNegativeInteger(foodRow?.item_id, 0),
-          name: String(foodRow?.name ?? "No food"),
-          useHq,
-          delta,
-        }
-      : {
-          itemId: 0,
-          name: "No food",
-          useHq: false,
-          delta: { gathering: 0, perception: 0, gp: 0 },
-        },
-  };
-}
-
-function evaluateProfileForTotals(baseTotals, profile) {
-  const candidateRows = allowedFoodRowsForProfile(profile);
-  const options =
-    candidateRows.length > 0
-      ? candidateRows.map((foodRow) => buildProfileFoodOption(baseTotals, profile, foodRow))
-      : [buildProfileFoodOption(baseTotals, profile, null)];
-
-  options.sort((left, right) => compareProfileFoodOptions(left, right, profile));
-
-  const top = options[0];
-  const bestOptions = options.filter(
-    (candidate) =>
-      compareProfileFoodOptions(candidate, top, profile) === 0 &&
-      (Number(candidate?.statDumpPreferenceScore) || 0) === (Number(top?.statDumpPreferenceScore) || 0) &&
-      normalizeNonNegativeInteger(candidate?.statSum, 0) === normalizeNonNegativeInteger(top?.statSum, 0),
-  );
-
-  return {
-    profileName: String(profile?.name ?? "Profile"),
-    profileId: String(profile?.id ?? ""),
-    statDump: normalizeAdvancedStatDump(profile?.statDump, ADVANCED_STAT_DUMP.NONE),
-    useHq: profile?.useHq !== false,
-    bestOption: top,
-    bestOptions,
-  };
-}
-
-function cloneAdvancedProfileSummary(profileSummary) {
-  const best = profileSummary?.bestOption;
-  return {
-    profileName: String(profileSummary?.profileName ?? "Profile"),
-    profileId: String(profileSummary?.profileId ?? ""),
-    statDump: normalizeAdvancedStatDump(profileSummary?.statDump, ADVANCED_STAT_DUMP.NONE),
-    enabledBreakpoints: normalizeNonNegativeInteger(best?.enabledCount, 0),
-    breakpointsMet: normalizeNonNegativeInteger(best?.hitCount, 0),
-    totals: summarizeTotals(best?.updatedTotals),
-    food: best?.food ?? {
-      itemId: 0,
-      name: "No food",
-      useHq: false,
-      delta: { gathering: 0, perception: 0, gp: 0 },
-    },
-    breakpointResults: Array.isArray(best?.breakpointResults)
-      ? best.breakpointResults.map((entry) => ({
-          id: String(entry?.id ?? ""),
-          name: String(entry?.name ?? "Breakpoint"),
-          stat: STAT_KEYS.includes(String(entry?.stat ?? "")) ? String(entry.stat) : "gathering",
-          value: normalizeNonNegativeInteger(entry?.value, 0),
-          priority: normalizeOptionalPriority(entry?.priority),
-          hit: Boolean(entry?.hit),
-        }))
-      : [],
-  };
-}
-
-function compareAdvancedSummaries(left, right) {
-  const priorityDiff = comparePriorityLedgers(left?.priorityLedger, right?.priorityLedger);
-  if (priorityDiff !== 0) {
-    return priorityDiff;
-  }
-  const hitDiff =
-    normalizeNonNegativeInteger(right?.breakpointsMet, 0) -
-    normalizeNonNegativeInteger(left?.breakpointsMet, 0);
-  if (hitDiff !== 0) {
-    return hitDiff;
-  }
-  const enabledDiff =
-    normalizeNonNegativeInteger(right?.breakpointsEnabled, 0) -
-    normalizeNonNegativeInteger(left?.breakpointsEnabled, 0);
-  if (enabledDiff !== 0) {
-    return enabledDiff;
-  }
-  const dumpDiff =
-    (Number(right?.dumpPreferenceScore) || 0) -
-    (Number(left?.dumpPreferenceScore) || 0);
-  if (dumpDiff !== 0) {
-    return dumpDiff;
-  }
-  const sumDiff =
-    normalizeNonNegativeInteger(right?.tiebreakStatSum, 0) -
-    normalizeNonNegativeInteger(left?.tiebreakStatSum, 0);
-  if (sumDiff !== 0) {
-    return sumDiff;
-  }
-  return 0;
-}
-
-function buildAdvancedSummaryFromProfileEvaluations(profileEvaluations) {
-  const rows = Array.isArray(profileEvaluations) ? profileEvaluations : [];
-  const scoringProfiles = rows.filter(
-    (profileEval) => normalizeNonNegativeInteger(profileEval?.bestOption?.enabledCount, 0) > 0,
-  );
-  const breakpointsEnabled = scoringProfiles.reduce(
-    (sum, profileEval) => sum + normalizeNonNegativeInteger(profileEval?.bestOption?.enabledCount, 0),
-    0,
-  );
-  const breakpointsMet = scoringProfiles.reduce(
-    (sum, profileEval) => sum + normalizeNonNegativeInteger(profileEval?.bestOption?.hitCount, 0),
-    0,
-  );
-  const priorityLedger = mergePriorityLedgers(
-    scoringProfiles.map((profileEval) => profileEval?.bestOption?.priorityLedger),
-  );
-  const dumpPreferenceScore = rows.reduce(
-    (sum, profileEval) => sum + (Number(profileEval?.bestOption?.statDumpPreferenceScore) || 0),
-    0,
-  );
-  const tiebreakStatSum = rows.reduce(
-    (sum, profileEval) => sum + normalizeNonNegativeInteger(profileEval?.bestOption?.statSum, 0),
-    0,
-  );
-
-  return {
-    breakpointsEnabled,
-    breakpointsMet,
-    priorityLedger,
-    dumpPreferenceScore,
-    tiebreakStatSum,
-  };
-}
-
-function buildAdvancedSummaryForTotals(baseTotals) {
-  const safeTotals = summarizeTotals(baseTotals);
-  const profiles = activeAdvancedProfiles();
-  const profileEvaluations = profiles.map((profile) => evaluateProfileForTotals(safeTotals, profile));
-  return buildAdvancedSummaryFromProfileEvaluations(profileEvaluations);
-}
-
-function sumSavedPlanMeldTotals(savedPlan) {
-  const totals = {
-    gathering: 0,
-    perception: 0,
-    gp: 0,
-  };
-  const pieces = Array.isArray(savedPlan?.pieceMelds) ? savedPlan.pieceMelds : [];
-  for (const piece of pieces) {
-    const melds = Array.isArray(piece?.melds) ? piece.melds : [];
-    for (const meld of melds) {
-      const statKey = String(meld?.stat ?? "").toLowerCase();
-      if (!STAT_KEYS.includes(statKey)) {
-        continue;
-      }
-      totals[statKey] += normalizeNonNegativeInteger(meld?.appliedValue, 0);
-    }
-  }
-  return totals;
-}
-
-function savedPlanTotalsWithoutFood(savedPlan) {
-  const base = summarizeTotals(savedPlan?.baseTotalsWithoutMeldsAndFood);
-  const meldTotals = sumSavedPlanMeldTotals(savedPlan);
-  const computedFromParts = summarizeTotals({
-    gathering: base.gathering + meldTotals.gathering,
-    perception: base.perception + meldTotals.perception,
-    gp: base.gp + meldTotals.gp,
-  });
-  const hasBaseParts = computedFromParts.gathering + computedFromParts.perception + computedFromParts.gp > 0;
-  if (hasBaseParts) {
-    return computedFromParts;
-  }
-
-  const fallbackTotals = savedPlanTotals(savedPlan);
-  const fallbackFoodDelta = summarizeTotals(savedPlan?.food?.delta);
-  return summarizeTotals({
-    gathering: Math.max(0, fallbackTotals.gathering - fallbackFoodDelta.gathering),
-    perception: Math.max(0, fallbackTotals.perception - fallbackFoodDelta.perception),
-    gp: Math.max(0, fallbackTotals.gp - fallbackFoodDelta.gp),
-  });
-}
-
-function normalizeSavedPlanBreakpointFoodDraftEntry(entry, profile, fallbackFood) {
-  const requestedFoodItemId = normalizeNonNegativeInteger(
-    entry?.foodItemId,
-    normalizeNonNegativeInteger(fallbackFood?.itemId, 0),
-  );
-  const selectedFoodRow = foodRowByItemId(requestedFoodItemId);
-  const useHqDefault = entry?.useHq == null ? Boolean(fallbackFood?.useHq ?? profile?.useHq !== false) : Boolean(entry.useHq);
-  const useHq = Boolean(useHqDefault && selectedFoodRow?.can_be_hq);
-  return {
-    foodItemId: selectedFoodRow ? normalizeNonNegativeInteger(selectedFoodRow?.item_id, 0) : 0,
-    useHq,
-  };
-}
-
-function evaluateSavedPlanBreakpointCheck(savedPlan, foodDraftByProfileId) {
-  const baseTotals = savedPlanTotalsWithoutFood(savedPlan);
-  const profiles = activeAdvancedProfiles();
-  const perProfileDraft = foodDraftByProfileId && typeof foodDraftByProfileId === "object" ? foodDraftByProfileId : {};
-
-  const profileEvaluations = profiles.map((profile) => {
-    const profileId = String(profile?.id ?? "");
-    const selectedDraft = normalizeSavedPlanBreakpointFoodDraftEntry(
-      perProfileDraft[profileId],
-      profile,
-      savedPlan?.food,
-    );
-    const selectedFoodRow = foodRowByItemId(selectedDraft.foodItemId);
-    const option = buildProfileFoodOption(
-      baseTotals,
-      {
-        ...profile,
-        useHq: selectedDraft.useHq,
-      },
-      selectedFoodRow,
-    );
-    return {
-      profileName: String(profile?.name ?? "Profile"),
-      profileId,
-      statDump: normalizeAdvancedStatDump(profile?.statDump, ADVANCED_STAT_DUMP.NONE),
-      useHq: selectedDraft.useHq,
-      bestOption: option,
-      bestOptions: [option],
-      selectedFood: selectedDraft,
-    };
-  });
-
-  const summary = buildAdvancedSummaryFromProfileEvaluations(profileEvaluations);
-  return {
-    breakpointsEnabled: summary.breakpointsEnabled,
-    breakpointsMet: summary.breakpointsMet,
-    priorityLedger: summary.priorityLedger,
-    dumpPreferenceScore: summary.dumpPreferenceScore,
-    tiebreakStatSum: summary.tiebreakStatSum,
-    baseTotals,
-    profiles: profileEvaluations.map((profileEval) => cloneAdvancedProfileSummary(profileEval)),
-    foodDraftByProfileId: Object.fromEntries(
-      profileEvaluations.map((profileEval) => [String(profileEval?.profileId ?? ""), { ...profileEval.selectedFood }]),
-    ),
-  };
-}
-
-function advancedBreakpointPatternKeyFromProfiles(profiles) {
-  const rows = Array.isArray(profiles) ? profiles : [];
-  return rows
-    .map((profile, profileIndex) => {
-      const profileId = String(profile?.profileId ?? `profile_${profileIndex + 1}`);
-      const breakpointRows = Array.isArray(profile?.breakpointResults) ? profile.breakpointResults : [];
-      const breakpointToken = breakpointRows
-        .map((entry, breakpointIndex) => {
-          const breakpointId = String(entry?.id ?? `bp_${breakpointIndex + 1}`);
-          return `${breakpointId}:${entry?.hit === true ? 1 : 0}`;
-        })
-        .join(",");
-      return `${profileId}[${breakpointToken}]`;
-    })
-    .join("||");
-}
-
-function advancedBreakpointPatternKeyForRow(row) {
-  return advancedBreakpointPatternKeyFromProfiles(row?.advanced?.profiles);
-}
-
-function advancedRowTotalKey(row) {
-  const totals = summarizeTotals({
-    gathering: row?.totalGathering,
-    perception: row?.totalPerception,
-    gp: row?.totalGp,
-  });
-  return `${totals.gathering}|${totals.perception}|${totals.gp}`;
-}
-
-function compareAdvancedRows(left, right) {
-  const advancedDiff = compareAdvancedSummaries(left?.advanced, right?.advanced);
-  if (advancedDiff !== 0) {
-    return advancedDiff;
-  }
-  const scoreDiff = (Number(right?.score) || 0) - (Number(left?.score) || 0);
-  if (scoreDiff !== 0) {
-    return scoreDiff;
-  }
-  const totalDiff =
-    normalizeNonNegativeInteger(right?.totalGathering, 0) +
-    normalizeNonNegativeInteger(right?.totalPerception, 0) +
-    normalizeNonNegativeInteger(right?.totalGp, 0) -
-    (normalizeNonNegativeInteger(left?.totalGathering, 0) +
-      normalizeNonNegativeInteger(left?.totalPerception, 0) +
-      normalizeNonNegativeInteger(left?.totalGp, 0));
-  if (totalDiff !== 0) {
-    return totalDiff;
-  }
-  return 0;
-}
-
-function buildAdvancedVariantPlanFromRow(row) {
-  const sourcePlan =
-    Array.isArray(row?.plans) && row.plans.length > 0
-      ? row.plans[0]
-      : null;
-  const totals = summarizeTotals({
-    gathering: sourcePlan?.totalGathering ?? row?.totalGathering,
-    perception: sourcePlan?.totalPerception ?? row?.totalPerception,
-    gp: sourcePlan?.totalGp ?? row?.totalGp,
-  });
-  const fallbackFood = {
-    itemId: 0,
-    name: "No food",
-    useHq: false,
-    delta: { gathering: 0, perception: 0, gp: 0 },
-  };
-
-  return {
-    ...(sourcePlan ?? {}),
-    score: Number(row?.score) || 0,
-    food: sourcePlan?.food ?? row?.food ?? fallbackFood,
-    totalGathering: totals.gathering,
-    totalPerception: totals.perception,
-    totalGp: totals.gp,
-    meetsTargets: true,
-    advanced: sourcePlan?.advanced ?? {
-      baseTotals: summarizeTotals(row?.advanced?.baseTotals),
-      profiles: Array.isArray(row?.advanced?.profiles) ? row.advanced.profiles : [],
-    },
-  };
-}
-
-function selectAdvancedPatternVariants(groupRows, maxVariants = ADVANCED_MODE_VARIANT_LIMIT) {
-  const rows = [...(Array.isArray(groupRows) ? groupRows : [])].sort(compareAdvancedRows);
-  if (rows.length === 0) {
-    return [];
-  }
-
-  const selected = [];
-  const usedTotals = new Set();
-  for (const row of rows) {
-    const totalsKey = advancedRowTotalKey(row);
-    if (usedTotals.has(totalsKey)) {
-      continue;
-    }
-    selected.push(buildAdvancedVariantPlanFromRow(row));
-    usedTotals.add(totalsKey);
-    if (selected.length >= Math.max(1, normalizeNonNegativeInteger(maxVariants, ADVANCED_MODE_VARIANT_LIMIT))) {
-      break;
-    }
-  }
-
-  if (selected.length > 0) {
-    return selected;
-  }
-  return [buildAdvancedVariantPlanFromRow(rows[0])];
-}
-
-function buildAdvancedRowFromPatternGroup(groupRows, activeScoringProfileCount) {
-  const rows = [...(Array.isArray(groupRows) ? groupRows : [])].sort(compareAdvancedRows);
-  const primary = rows[0];
-  if (!primary) {
-    return null;
-  }
-
-  const plans = selectAdvancedPatternVariants(rows, ADVANCED_MODE_VARIANT_LIMIT);
-  const primaryPlan = plans[0] ?? buildAdvancedVariantPlanFromRow(primary);
-  const totals = summarizeTotals({
-    gathering: primaryPlan?.totalGathering ?? primary?.totalGathering,
-    perception: primaryPlan?.totalPerception ?? primary?.totalPerception,
-    gp: primaryPlan?.totalGp ?? primary?.totalGp,
-  });
-  const breakpointsMet = normalizeNonNegativeInteger(primary?.advanced?.breakpointsMet, Number(primary?.score) || 0);
-
-  return {
-    ...primary,
-    score: breakpointsMet,
-    totalGathering: totals.gathering,
-    totalPerception: totals.perception,
-    totalGp: totals.gp,
-    food: primaryPlan?.food ?? primary?.food,
-    meetsTargets: true,
-    plans,
-    advanced: {
-      ...(primary?.advanced ?? {}),
-      enabledProfileCount: activeScoringProfileCount,
-    },
-  };
-}
-
-function applyAdvancedMode(results) {
-  const rows = Array.isArray(results) ? results : [];
-  const profiles = activeAdvancedProfiles();
-  const activeScoringProfileCount = profiles.length;
-
-  const evaluated = rows.map((row) => {
-    const baseTotals = {
-      gathering: normalizeNonNegativeInteger(row?.totalGathering, 0),
-      perception: normalizeNonNegativeInteger(row?.totalPerception, 0),
-      gp: normalizeNonNegativeInteger(row?.totalGp, 0),
-    };
-    const profileEvaluations = profiles.map((profile) => evaluateProfileForTotals(baseTotals, profile));
-    const summary = buildAdvancedSummaryFromProfileEvaluations(profileEvaluations);
-
-    const profilesForRow = profileEvaluations.map((profileEval) => cloneAdvancedProfileSummary(profileEval));
-
-    const sourcePlans = Array.isArray(row?.plans) ? row.plans : [];
-    const plans = sourcePlans.map((plan, planIndex) => {
-      const planProfiles = profileEvaluations.map((profileEval) => {
-        const optionsForProfile = Array.isArray(profileEval?.bestOptions) ? profileEval.bestOptions : [];
-        const option =
-          optionsForProfile[planIndex % Math.max(1, optionsForProfile.length)] ??
-          profileEval?.bestOption ??
-          buildProfileFoodOption(baseTotals, {}, null);
-        return {
-          profileName: String(profileEval?.profileName ?? "Profile"),
-          profileId: String(profileEval?.profileId ?? ""),
-          statDump: normalizeAdvancedStatDump(profileEval?.statDump, ADVANCED_STAT_DUMP.NONE),
-          enabledBreakpoints: normalizeNonNegativeInteger(option?.enabledCount, 0),
-          breakpointsMet: normalizeNonNegativeInteger(option?.hitCount, 0),
-          totals: summarizeTotals(option?.updatedTotals),
-          food: option?.food ?? {
-            itemId: 0,
-            name: "No food",
-            useHq: false,
-            delta: { gathering: 0, perception: 0, gp: 0 },
-          },
-          breakpointResults: Array.isArray(option?.breakpointResults)
-            ? option.breakpointResults.map((entry) => ({
-                id: String(entry?.id ?? ""),
-                name: String(entry?.name ?? "Breakpoint"),
-                stat: STAT_KEYS.includes(String(entry?.stat ?? "")) ? String(entry.stat) : "gathering",
-                value: normalizeNonNegativeInteger(entry?.value, 0),
-                priority: normalizeOptionalPriority(entry?.priority),
-                hit: Boolean(entry?.hit),
-              }))
-            : [],
-        };
-      });
-
-      const primaryProfileFood = planProfiles[0]?.food ?? row?.food ?? null;
-      const primaryProfileTotals = planProfiles[0]?.totals ?? baseTotals;
-      return {
-        ...plan,
-        food: primaryProfileFood,
-        totalGathering: normalizeNonNegativeInteger(primaryProfileTotals.gathering, 0),
-        totalPerception: normalizeNonNegativeInteger(primaryProfileTotals.perception, 0),
-        totalGp: normalizeNonNegativeInteger(primaryProfileTotals.gp, 0),
-        advanced: {
-          baseTotals,
-          profiles: planProfiles,
-        },
-      };
-    });
-
-    const primaryFood = profilesForRow[0]?.food ?? row?.food ?? null;
-    const primaryTotals = profilesForRow[0]?.totals ?? baseTotals;
-    return {
-      ...row,
-      score: summary.breakpointsMet,
-      totalGathering: normalizeNonNegativeInteger(primaryTotals.gathering, 0),
-      totalPerception: normalizeNonNegativeInteger(primaryTotals.perception, 0),
-      totalGp: normalizeNonNegativeInteger(primaryTotals.gp, 0),
-      food: primaryFood,
-      meetsTargets: true,
-      plans,
-      advanced: {
-        enabledProfileCount: activeScoringProfileCount,
-        baseTotals,
-        profiles: profilesForRow,
-        breakpointsMet: summary.breakpointsMet,
-        breakpointsEnabled: summary.breakpointsEnabled,
-        priorityLedger: summary.priorityLedger,
-        dumpPreferenceScore: summary.dumpPreferenceScore,
-        tiebreakStatSum: summary.tiebreakStatSum,
-      },
-    };
-  });
-
-  const ranked = evaluated.sort(compareAdvancedRows);
-
-  const groupedByBreakpointPattern = new Map();
-  for (const row of ranked) {
-    const patternKey = advancedBreakpointPatternKeyForRow(row);
-    if (!groupedByBreakpointPattern.has(patternKey)) {
-      groupedByBreakpointPattern.set(patternKey, []);
-    }
-    groupedByBreakpointPattern.get(patternKey).push(row);
-  }
-
-  const groupedRows = Array.from(groupedByBreakpointPattern.values())
-    .map((groupRows) => buildAdvancedRowFromPatternGroup(groupRows, activeScoringProfileCount))
-    .filter((row) => !!row)
-    .sort(compareAdvancedRows);
-
-  // The engine returns the full Pareto frontier (up to thousands of rows) so we
-  // can rank by breakpoint hits here; only keep the requested display count.
-  const displayLimit = normalizeMaxResultsForSolveMode(state?.solve?.maxResults, SOLVER_MODES.ADVANCED);
-  return groupedRows.slice(0, displayLimit);
 }
 
 function buildFoodOptionForTotals(resultTotals, foodRow) {
@@ -2071,7 +1109,7 @@ function syncSelectedGearToSavedPlan(savedPlan) {
     nextMap[slot] = pieceId;
   }
   if (ringPieceCount === 1 && Number(nextMap.ring_left) > 0) {
-    nextMap.ring_right = Number(nextMap.ring_left);
+    setRingSelection(nextMap, nextMap.ring_left);
   }
   state.selectedGearBySlot = nextMap;
   syncSelectedGearMap();
@@ -2338,6 +1376,7 @@ function refreshSavedPlansUiDerived() {
   }
 
   const gradeValueIndex = state.savedPlansUi.gradeValueIndexByStat;
+  const foodRows = getFoodRows();
   const previewByPlanId = {};
   const existingBreakpointFoodByPlanId =
     state.savedPlansUi.breakpointCheckFoodByPlanId && typeof state.savedPlansUi.breakpointCheckFoodByPlanId === "object"
@@ -2345,14 +1384,14 @@ function refreshSavedPlansUiDerived() {
       : {};
   const nextBreakpointFoodByPlanId = {};
   const breakpointCheckPreviewByPlanId = {};
-  const breakpointProfiles = activeAdvancedProfiles();
+  const breakpointProfiles = selectActiveAdvancedProfiles(state?.advanced?.profiles);
 
   for (const plan of state.savedPlans ?? []) {
     const planId = String(plan?.id ?? "");
     const draft = state.savedPlansUi.draftsByPlanId?.[planId];
     const previewPlan = draft
       ? applyDraftToSavedPlan(plan, draft, gradeValueIndex, {
-          foodRows: getFoodRows(),
+          foodRows,
           overmeldAllowedGradesByStat: state.savedPlansUi.overmeldAllowedGradesByStat,
         }).plan
       : plan;
@@ -2372,17 +1411,23 @@ function refreshSavedPlansUiDerived() {
         existingPlanDraft[profileId],
         profile,
         previewPlan?.food,
+        foodRows,
       );
     }
     nextBreakpointFoodByPlanId[planId] = normalizedFoodDraftByProfileId;
-    breakpointCheckPreviewByPlanId[planId] = evaluateSavedPlanBreakpointCheck(
-      previewPlan,
-      normalizedFoodDraftByProfileId,
-    );
+    breakpointCheckPreviewByPlanId[planId] = evaluateSavedPlanBreakpointCheck(previewPlan, normalizedFoodDraftByProfileId, {
+      advancedProfiles: state?.advanced?.profiles,
+      foodRows,
+    });
   }
   state.savedPlansUi.previewByPlanId = previewByPlanId;
   state.savedPlansUi.breakpointCheckFoodByPlanId = nextBreakpointFoodByPlanId;
   state.savedPlansUi.breakpointCheckPreviewByPlanId = breakpointCheckPreviewByPlanId;
+}
+
+function refreshSavedPlansUiAndRender() {
+  refreshSavedPlansUiDerived();
+  render();
 }
 
 function savedPlanPreviewById(planId) {
@@ -2403,8 +1448,7 @@ function toggleSavedPlanBreakpointCheck(planId) {
   }
   const isOpen = state.savedPlansUi.breakpointCheckViewPlanId === safeId;
   state.savedPlansUi.breakpointCheckViewPlanId = isOpen ? null : safeId;
-  refreshSavedPlansUiDerived();
-  render();
+  refreshSavedPlansUiAndRender();
 }
 
 function updateSavedPlanBreakpointCheckDraft({ planId, profileId, field, value }) {
@@ -2418,7 +1462,9 @@ function updateSavedPlanBreakpointCheckDraft({ planId, profileId, field, value }
   if (!planPreview) {
     return;
   }
-  const profile = activeAdvancedProfiles().find((entry) => String(entry?.id ?? "") === safeProfileId);
+  const profile = selectActiveAdvancedProfiles(state?.advanced?.profiles).find(
+    (entry) => String(entry?.id ?? "") === safeProfileId,
+  );
   if (!profile) {
     return;
   }
@@ -2428,10 +1474,12 @@ function updateSavedPlanBreakpointCheckDraft({ planId, profileId, field, value }
     typeof state.savedPlansUi.breakpointCheckFoodByPlanId[safePlanId] === "object"
       ? state.savedPlansUi.breakpointCheckFoodByPlanId[safePlanId]
       : {};
+  const foodRows = getFoodRows();
   const currentEntry = normalizeSavedPlanBreakpointFoodDraftEntry(
     existingPlanEntries[safeProfileId],
     profile,
     planPreview?.food,
+    foodRows,
   );
   if (field === "foodItemId") {
     currentEntry.foodItemId = normalizeNonNegativeInteger(value, 0);
@@ -2441,13 +1489,17 @@ function updateSavedPlanBreakpointCheckDraft({ planId, profileId, field, value }
     return;
   }
 
-  const normalizedEntry = normalizeSavedPlanBreakpointFoodDraftEntry(currentEntry, profile, planPreview?.food);
+  const normalizedEntry = normalizeSavedPlanBreakpointFoodDraftEntry(
+    currentEntry,
+    profile,
+    planPreview?.food,
+    foodRows,
+  );
   state.savedPlansUi.breakpointCheckFoodByPlanId[safePlanId] = {
     ...existingPlanEntries,
     [safeProfileId]: normalizedEntry,
   };
-  refreshSavedPlansUiDerived();
-  render();
+  refreshSavedPlansUiAndRender();
 }
 
 function saveAndStoreSavedPlans(nextPlans) {
@@ -2521,8 +1573,7 @@ function toggleSavedPlanEdit(planId) {
   if (state.savedPlansUi.editingPlanId === safeId) {
     state.savedPlansUi.editingPlanId = null;
     delete state.savedPlansUi.draftsByPlanId[safeId];
-    refreshSavedPlansUiDerived();
-    render();
+    refreshSavedPlansUiAndRender();
     return;
   }
 
@@ -2536,8 +1587,7 @@ function toggleSavedPlanEdit(planId) {
   state.savedPlansUi.editingPlanId = safeId;
   state.savedPlansUi.viewPlanId = safeId;
   state.savedPlansUi.draftsByPlanId[safeId] = createDraftFromSavedPlan(plan);
-  refreshSavedPlansUiDerived();
-  render();
+  refreshSavedPlansUiAndRender();
 }
 
 function updateSavedPlanDraftField({ planId, pieceIndex, meldIndex, field, value }) {
@@ -2548,20 +1598,17 @@ function updateSavedPlanDraftField({ planId, pieceIndex, meldIndex, field, value
   }
   if (field === "name") {
     draft.name = String(value ?? "");
-    refreshSavedPlansUiDerived();
-    render();
+    refreshSavedPlansUiAndRender();
     return;
   }
   if (field === "foodItemId") {
     draft.foodItemId = normalizeNonNegativeInteger(value, 0);
-    refreshSavedPlansUiDerived();
-    render();
+    refreshSavedPlansUiAndRender();
     return;
   }
   if (field === "foodUseHq") {
     draft.foodUseHq = Boolean(value);
-    refreshSavedPlansUiDerived();
-    render();
+    refreshSavedPlansUiAndRender();
     return;
   }
   const piece = draft?.pieceMelds?.[pieceIndex];
@@ -2586,8 +1633,7 @@ function updateSavedPlanDraftField({ planId, pieceIndex, meldIndex, field, value
     meld.grade = Math.max(1, Math.min(12, normalizeNonNegativeInteger(value, 1)));
   }
 
-  refreshSavedPlansUiDerived();
-  render();
+  refreshSavedPlansUiAndRender();
 }
 
 function saveSavedPlanEdits(planId) {
@@ -2626,8 +1672,7 @@ function cancelSavedPlanEdits(planId) {
     state.savedPlansUi.editingPlanId = null;
   }
   delete state.savedPlansUi.draftsByPlanId[safeId];
-  refreshSavedPlansUiDerived();
-  render();
+  refreshSavedPlansUiAndRender();
 }
 
 function deleteSavedPlan(planId) {
@@ -2744,7 +1789,12 @@ async function refineSavedPlan(planId) {
   const refineWithAdvanced = isAdvancedModeEnabled();
   const baselineTotals = savedPlanTotals(savedPlan);
   const baselineScore = refineWithAdvanced ? NaN : Number(scoreCandidate(baselineTotals, targetOverride));
-  const baselineAdvancedSummary = refineWithAdvanced ? buildAdvancedSummaryForTotals(baselineTotals) : null;
+  const baselineAdvancedSummary = refineWithAdvanced
+    ? buildAdvancedSummaryForTotals(baselineTotals, {
+        advancedProfiles: state?.advanced?.profiles,
+        foodRows: getFoodRows(),
+      })
+    : null;
   const objectiveLabel = refineObjectiveLabel(objective);
   const statusContext = `Refine from "${savedPlan.name}" (${objectiveLabel}).`;
 
@@ -3075,7 +2125,10 @@ function addAdvancedProfile() {
       enabled: true,
     },
     nextId,
-    { keepEmptyFoodSelection: true },
+    {
+      keepEmptyFoodSelection: true,
+      allFoodIds: allFoodIds(),
+    },
   );
   state.advanced.nextProfileId = nextId + 1;
   state.advanced.profiles.push(newProfile);
@@ -3106,7 +2159,10 @@ function copyAdvancedProfile(profileIndex) {
         : [],
     },
     nextId,
-    { keepEmptyFoodSelection: true },
+    {
+      keepEmptyFoodSelection: true,
+      allFoodIds: allFoodIds(),
+    },
   );
 
   state.advanced.nextProfileId = nextId + 1;
@@ -3348,7 +2404,14 @@ async function runSolver(options = {}) {
   state.selectedGearRows = solveOutput.selectedGearRows;
   state.solveDiagnostics = solveOutput.diagnostics;
   const baseResults = Array.isArray(solveOutput?.results) ? solveOutput.results : [];
-  const rawResultsWithFood = advancedActive ? applyAdvancedMode(baseResults) : applyFixedFood(baseResults);
+  const rawResultsWithFood = advancedActive
+    ? applyAdvancedMode(baseResults, {
+        advancedProfiles: state?.advanced?.profiles,
+        foodRows: getFoodRows(),
+        displayLimit: normalizeMaxResultsForSolveMode(state?.solve?.maxResults, SOLVER_MODES.ADVANCED),
+        variantLimit: ADVANCED_MODE_VARIANT_LIMIT,
+      })
+    : applyFixedFood(baseResults);
   const maybePostProcessed =
     typeof options?.postProcessResults === "function"
       ? options.postProcessResults(rawResultsWithFood)
@@ -3427,8 +2490,7 @@ function render() {
         state.selectedGearBySlot[slot] ?? 0,
       );
       if (slot === "ring") {
-        state.selectedGearBySlot.ring_left = normalizedItemId;
-        state.selectedGearBySlot.ring_right = normalizedItemId;
+        setRingSelection(state.selectedGearBySlot, normalizedItemId);
       } else {
         state.selectedGearBySlot[slot] = normalizedItemId;
       }

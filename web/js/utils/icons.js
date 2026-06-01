@@ -1,10 +1,4 @@
-function normalizeNonNegativeInteger(value, fallback = 0) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    return fallback;
-  }
-  return Math.floor(parsed);
-}
+import { normalizeNonNegativeInteger } from "./normalize.js";
 
 export function normalizeIconId(value) {
   return normalizeNonNegativeInteger(value, 0);

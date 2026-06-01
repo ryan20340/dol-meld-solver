@@ -1,6 +1,7 @@
 import { buildXivIconUrl, normalizeIconId } from "../utils/icons.js";
+import { normalizeNonNegativeInteger, normalizeOptionalPriority } from "../utils/normalize.js";
+import { hasAnyTargets, STAT_KEYS } from "../utils/stats.js";
 
-const STAT_KEYS = Object.freeze(["gathering", "perception", "gp"]);
 const STAT_DISPLAY = Object.freeze({
   gathering: "Gathering",
   perception: "Perception",
@@ -38,21 +39,6 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
-}
-
-function normalizeNonNegativeInteger(value) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    return 0;
-  }
-  return Math.floor(parsed);
-}
-
-function hasAnyTargets(targets) {
-  const gathering = normalizeNonNegativeInteger(targets?.gathering);
-  const perception = normalizeNonNegativeInteger(targets?.perception);
-  const gp = normalizeNonNegativeInteger(targets?.gp);
-  return gathering + perception + gp > 0;
 }
 
 function buildItemIconHtml(iconId, label, className = "item-icon", options = {}) {
@@ -121,21 +107,6 @@ function buildRenderIconContext(state) {
     foodCanBeHqByItemId: buildCanBeHqByItemId(foodRows, "item_id"),
     gearUseHq: state?.gear?.useHq === true,
   };
-}
-
-function normalizeOptionalPriority(value) {
-  if (value == null) {
-    return null;
-  }
-  const asText = String(value).trim();
-  if (asText === "") {
-    return null;
-  }
-  const parsed = Number(asText);
-  if (!Number.isFinite(parsed)) {
-    return null;
-  }
-  return Math.floor(parsed);
 }
 
 function formatTotalVsCap(total, cap) {

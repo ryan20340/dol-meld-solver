@@ -1,16 +1,6 @@
-export function createInitialState() {
-  const defaultAdvancedProfiles = [
-    {
-      id: "profile_1",
-      name: "Profile 1",
-      enabled: true,
-      useHq: true,
-      statDump: "none",
-      allowedFoodIds: [],
-      breakpoints: [],
-    },
-  ];
+import { buildDefaultAdvancedState } from "./advanced-config.js";
 
+export function createInitialState() {
   return {
     data: null,
     selectedGearRows: [],
@@ -39,13 +29,7 @@ export function createInitialState() {
       maxBranches: 5000000,
       useBruteForce: false,
     },
-    advanced: {
-      enabled: false,
-      activeProfileIndex: 0,
-      nextProfileId: 2,
-      nextBreakpointId: 1,
-      profiles: defaultAdvancedProfiles,
-    },
+    advanced: buildDefaultAdvancedState(),
     solveDiagnostics: null,
     results: [],
     ui: {
