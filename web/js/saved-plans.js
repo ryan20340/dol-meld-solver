@@ -1,5 +1,8 @@
+import { BASE_GATHERER_GP, getGearRowTrackedStats } from "./utils/gear-stats.js";
+
 const STORAGE_KEY = "dol-meld-solver-saved-plans";
 const MAX_SAVED_PLANS = 20;
+const MAX_TOTAL_MATERIA_SLOTS_PER_PIECE = 5;
 const STAT_KEYS = Object.freeze(["gathering", "perception", "gp"]);
 const STAT_DISPLAY = Object.freeze({
   gathering: "Gathering",
@@ -133,6 +136,9 @@ function normalizePiece(piece) {
     slot: String(piece?.slot ?? ""),
     pieceName: String(piece?.pieceName ?? "Unknown piece"),
     maxMateriaSlots: normalizeNonNegativeInt(piece?.maxMateriaSlots, 0),
+    guaranteedMateriaSlots:
+      piece?.guaranteedMateriaSlots == null ? null : normalizeNonNegativeInt(piece.guaranteedMateriaSlots, 0),
+    advancedMeldingPermitted: Boolean(piece?.advancedMeldingPermitted),
     trackedMeldCaps,
     melds,
   };
@@ -226,6 +232,97 @@ function normalizeTrackedCaps(gearRow) {
   };
 }
 
+function maxMateriaSlotsForGearRow(gearRow) {
+  const guaranteed = normalizeNonNegativeInt(gearRow?.guaranteed_materia_slots, 0);
+  if (!gearRow?.advanced_melding_permitted) {
+    return guaranteed;
+  }
+  return Math.max(guaranteed, MAX_TOTAL_MATERIA_SLOTS_PER_PIECE);
+}
+
+function buildGearRowById(gearRows) {
+  const byId = new Map();
+  for (const row of Array.isArray(gearRows) ? gearRows : []) {
+    const itemId = normalizeNonNegativeInt(row?.id, 0);
+    if (itemId > 0) {
+      byId.set(itemId, row);
+    }
+  }
+  return byId;
+}
+
+function normalizePieceForGearRow(piece, gearRow) {
+  if (!gearRow) {
+    return normalizePiece(piece);
+  }
+  const guaranteedMateriaSlots = normalizeNonNegativeInt(gearRow?.guaranteed_materia_slots, 0);
+  const maxMateriaSlots = maxMateriaSlotsForGearRow(gearRow);
+  const sourceMelds = Array.isArray(piece?.melds) ? piece.melds : [];
+  const melds = sourceMelds
+    .map((meld, meldIndex) => {
+      const slotIndex = normalizeNonNegativeInt(meld?.slotIndex, meldIndex);
+      if (slotIndex >= maxMateriaSlots) {
+        return null;
+      }
+      const isOvermeld = slotIndex >= guaranteedMateriaSlots;
+      return {
+        ...meld,
+        slotIndex,
+        isOvermeld,
+        overmeldIndex: isOvermeld ? slotIndex - guaranteedMateriaSlots : -1,
+      };
+    })
+    .filter((meld) => !!meld);
+
+  return normalizePiece({
+    ...piece,
+    pieceId: normalizeNonNegativeInt(gearRow?.id, 0),
+    slot: String(gearRow?.slot ?? piece?.slot ?? ""),
+    pieceName: String(gearRow?.name ?? piece?.pieceName ?? "Unknown piece"),
+    maxMateriaSlots,
+    guaranteedMateriaSlots,
+    advancedMeldingPermitted: Boolean(gearRow?.advanced_melding_permitted),
+    trackedMeldCaps: normalizeTrackedCaps(gearRow),
+    melds,
+  });
+}
+
+function materializeDraftPiecesForGear(sourcePieceMelds, gearRows) {
+  const gearRowById = buildGearRowById(gearRows);
+  return (Array.isArray(sourcePieceMelds) ? sourcePieceMelds : []).map((piece) => {
+    const gearRow = gearRowById.get(normalizeNonNegativeInt(piece?.pieceId, 0));
+    if (!gearRow || String(gearRow?.slot ?? "") !== String(piece?.slot ?? "")) {
+      return piece;
+    }
+    return normalizePieceForGearRow(piece, gearRow);
+  });
+}
+
+function computeBaseTotalsFromPieces(pieceMelds, gearRows, options = {}) {
+  const gearRowById = buildGearRowById(gearRows);
+  const rows = [];
+  for (const piece of Array.isArray(pieceMelds) ? pieceMelds : []) {
+    const row = gearRowById.get(normalizeNonNegativeInt(piece?.pieceId, 0));
+    if (!row || String(row?.slot ?? "") !== String(piece?.slot ?? "")) {
+      return null;
+    }
+    rows.push(row);
+  }
+  if (rows.length === 0) {
+    return null;
+  }
+
+  const totals = emptyStats();
+  for (const row of rows) {
+    const stats = getGearRowTrackedStats(row, { useHq: options?.useGearHq !== false });
+    totals.gathering += normalizeNonNegativeInt(stats?.gathering, 0);
+    totals.perception += normalizeNonNegativeInt(stats?.perception, 0);
+    totals.gp += normalizeNonNegativeInt(stats?.gp, 0);
+  }
+  totals.gp += BASE_GATHERER_GP;
+  return totals;
+}
+
 function sumMeldTotalsFromPlanVariant(planVariant) {
   const totals = {
     gathering: 0,
@@ -290,7 +387,13 @@ export function createSavedPlanFromResult({
         return {
           ...normalizedPiece,
           pieceId: normalizeNonNegativeInt(gearRow?.id ?? normalizedPiece.pieceId, normalizedPiece.pieceId),
-          trackedMeldCaps: normalizeTrackedCaps(gearRow),
+          pieceName: String(gearRow?.name ?? normalizedPiece.pieceName),
+          guaranteedMateriaSlots: gearRow
+            ? normalizeNonNegativeInt(gearRow?.guaranteed_materia_slots, 0)
+            : normalizedPiece.guaranteedMateriaSlots,
+          advancedMeldingPermitted: Boolean(gearRow?.advanced_melding_permitted ?? normalizedPiece.advancedMeldingPermitted),
+          maxMateriaSlots: gearRow ? maxMateriaSlotsForGearRow(gearRow) : normalizedPiece.maxMateriaSlots,
+          trackedMeldCaps: gearRow ? normalizeTrackedCaps(gearRow) : normalizedPiece.trackedMeldCaps,
         };
       })
     : [];
@@ -416,11 +519,31 @@ function legalGradesForMeld(stat, meld, gradeValueIndex, overmeldAllowedGradesBy
 function revalidatePieceMelds(piece, gradeValueIndex, overmeldAllowedGradesByStat) {
   const caps = cloneStats(piece?.trackedMeldCaps);
   const used = emptyStats();
+  const rawMaxSlots = Number(piece?.maxMateriaSlots);
+  const hasMaxSlots = Number.isFinite(rawMaxSlots) && rawMaxSlots >= 0;
+  const maxSlots = Math.max(0, Math.floor(rawMaxSlots));
+  const rawGuaranteedSlots = Number(piece?.guaranteedMateriaSlots);
+  const hasGuaranteedSlots = Number.isFinite(rawGuaranteedSlots) && rawGuaranteedSlots >= 0;
+  const guaranteedSlots = Math.max(0, Math.floor(rawGuaranteedSlots));
   const melds = Array.isArray(piece?.melds) ? piece.melds : [];
-  const normalizedMelds = melds.map((meld) => {
+  const normalizedMelds = melds.map((meld, meldIndex) => {
+    const slotIndex = normalizeNonNegativeInt(meld?.slotIndex, meldIndex);
+    if (hasMaxSlots && slotIndex >= maxSlots) {
+      return null;
+    }
+    const isOvermeld = hasGuaranteedSlots ? slotIndex >= guaranteedSlots : Boolean(meld?.isOvermeld);
+    const overmeldIndex = hasGuaranteedSlots
+      ? isOvermeld ? slotIndex - guaranteedSlots : -1
+      : normalizeInt(meld?.overmeldIndex, -1);
+    const slottedMeld = {
+      ...meld,
+      slotIndex,
+      isOvermeld,
+      overmeldIndex,
+    };
     const stat = normalizeStatKey(meld?.stat);
     const requestedGrade = normalizeGrade(meld?.grade);
-    const legalGrades = legalGradesForMeld(stat, meld, gradeValueIndex, overmeldAllowedGradesByStat);
+    const legalGrades = legalGradesForMeld(stat, slottedMeld, gradeValueIndex, overmeldAllowedGradesByStat);
     const grade = legalGrades.includes(requestedGrade)
       ? requestedGrade
       : normalizeGrade(legalGrades[legalGrades.length - 1] ?? requestedGrade);
@@ -430,13 +553,13 @@ function revalidatePieceMelds(piece, gradeValueIndex, overmeldAllowedGradesBySta
     const appliedValue = cap > 0 ? Math.min(rawValue, remaining) : rawValue;
     used[stat] += appliedValue;
     return {
-      ...normalizeMeld(meld),
+      ...normalizeMeld(slottedMeld),
       stat,
       grade,
       rawValue,
       appliedValue,
     };
-  });
+  }).filter((meld) => !!meld);
 
   return {
     ...normalizePiece(piece),
@@ -507,11 +630,17 @@ function buildDraftFood(basePlan, draft, foodRows, totalsWithoutFood) {
 export function applyDraftToSavedPlan(plan, draft, gradeValueIndex, options = {}) {
   const basePlan = normalizeSavedPlan(plan);
   const sourcePieceMelds = Array.isArray(draft?.pieceMelds) ? draft.pieceMelds : basePlan.pieceMelds;
-  const pieceMelds = sourcePieceMelds.map((piece) =>
+  const sourcePieces = Array.isArray(options?.gearRows)
+    ? materializeDraftPiecesForGear(sourcePieceMelds, options.gearRows)
+    : sourcePieceMelds;
+  const pieceMelds = sourcePieces.map((piece) =>
     revalidatePieceMelds(piece, gradeValueIndex, options?.overmeldAllowedGradesByStat),
   );
   const meldTotals = sumMeldTotals(pieceMelds);
-  const totalsWithoutFood = addStats(basePlan.baseTotalsWithoutMeldsAndFood, meldTotals);
+  const baseTotalsWithoutMeldsAndFood =
+    computeBaseTotalsFromPieces(pieceMelds, options?.gearRows, { useGearHq: options?.useGearHq }) ??
+    basePlan.baseTotalsWithoutMeldsAndFood;
+  const totalsWithoutFood = addStats(baseTotalsWithoutMeldsAndFood, meldTotals);
   const food = buildDraftFood(basePlan, draft, options?.foodRows, totalsWithoutFood);
   const totalStats = addStats(totalsWithoutFood, cloneStats(food?.delta));
   const name = String(draft?.name ?? basePlan.name).trim() || basePlan.name;
@@ -522,6 +651,7 @@ export function applyDraftToSavedPlan(plan, draft, gradeValueIndex, options = {}
       name,
       food,
       pieceMelds,
+      baseTotalsWithoutMeldsAndFood,
       totalGathering: totalStats.gathering,
       totalPerception: totalStats.perception,
       totalGp: totalStats.gp,
@@ -544,6 +674,24 @@ export function createDraftFromSavedPlan(plan) {
       })),
     })),
   };
+}
+
+export function duplicateSavedPlan(plan, options = {}) {
+  const normalized = normalizeSavedPlan(plan);
+  const name = String(options?.name ?? `${normalized.name} Copy`).trim() || `${normalized.name} Copy`;
+  return normalizeSavedPlan({
+    ...normalized,
+    id: makePlanId(),
+    name,
+    savedAt: new Date().toISOString(),
+    food: normalized.food ? { ...normalized.food, delta: cloneStats(normalized.food.delta) } : null,
+    baseTotalsWithoutMeldsAndFood: cloneStats(normalized.baseTotalsWithoutMeldsAndFood),
+    pieceMelds: normalized.pieceMelds.map((piece) => ({
+      ...piece,
+      trackedMeldCaps: cloneStats(piece.trackedMeldCaps),
+      melds: piece.melds.map((meld) => ({ ...meld })),
+    })),
+  });
 }
 
 export function exportSavedPlanText(plan) {

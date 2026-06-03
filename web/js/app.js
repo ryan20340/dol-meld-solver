@@ -38,6 +38,7 @@ import {
   buildMateriaGradeValueIndex,
   createDraftFromSavedPlan,
   createSavedPlanFromResult,
+  duplicateSavedPlan,
   exportSavedPlanText,
   getMaxSavedPlans,
   loadSavedPlans,
@@ -1355,6 +1356,8 @@ function refreshSavedPlansUiDerived() {
     const draft = state.savedPlansUi.draftsByPlanId?.[planId];
     const previewPlan = draft
       ? applyDraftToSavedPlan(plan, draft, gradeValueIndex, {
+          gearRows: state?.data?.gear?.rows,
+          useGearHq: state?.gear?.useHq,
           foodRows,
           overmeldAllowedGradesByStat: state.savedPlansUi.overmeldAllowedGradesByStat,
         }).plan
@@ -1523,6 +1526,40 @@ function saveResultPlanVariant(resultIndex, planIndex) {
   render();
 }
 
+function nextCopiedSavedPlanName(sourceName) {
+  const baseName = String(sourceName ?? "Saved plan").trim() || "Saved plan";
+  const existingNames = new Set((state.savedPlans ?? []).map((plan) => String(plan?.name ?? "")));
+  let candidate = `${baseName} Copy`;
+  let suffix = 2;
+  while (existingNames.has(candidate)) {
+    candidate = `${baseName} Copy ${suffix}`;
+    suffix += 1;
+  }
+  return candidate;
+}
+
+function copySavedPlan(planId) {
+  const safeId = String(planId ?? "");
+  if (state.savedPlansUi.editingPlanId === safeId) {
+    setStatus("Save or cancel edits before copying this plan.", true);
+    return;
+  }
+  const planIndex = findSavedPlanIndexById(safeId);
+  if (planIndex < 0) {
+    setStatus("Cannot copy saved plan: plan not found.", true);
+    return;
+  }
+
+  const sourcePlan = state.savedPlans[planIndex];
+  const copiedPlan = duplicateSavedPlan(sourcePlan, {
+    name: nextCopiedSavedPlanName(sourcePlan?.name),
+  });
+  saveAndStoreSavedPlans([copiedPlan, ...(state.savedPlans ?? [])]);
+  state.savedPlansUi.viewPlanId = copiedPlan.id;
+  setStatus(`Copied saved plan "${sourcePlan.name}" to "${copiedPlan.name}".`);
+  render();
+}
+
 function toggleSavedPlanView(planId) {
   const safeId = String(planId ?? "");
   if (state.savedPlansUi.editingPlanId === safeId) {
@@ -1578,6 +1615,21 @@ function updateSavedPlanDraftField({ planId, pieceIndex, meldIndex, field, value
     refreshSavedPlansUiAndRender();
     return;
   }
+  if (field === "pieceId") {
+    const piece = draft?.pieceMelds?.[pieceIndex];
+    if (!piece) {
+      return;
+    }
+    const nextPieceId = normalizeNonNegativeInteger(value, 0);
+    const gearRows = Array.isArray(state?.data?.gear?.rows) ? state.data.gear.rows : [];
+    const gearRow = gearRows.find((row) => normalizeNonNegativeInteger(row?.id, 0) === nextPieceId);
+    if (!gearRow || String(gearRow?.slot ?? "") !== String(piece?.slot ?? "")) {
+      return;
+    }
+    piece.pieceId = nextPieceId;
+    refreshSavedPlansUiAndRender();
+    return;
+  }
   const piece = draft?.pieceMelds?.[pieceIndex];
   const meld = piece?.melds?.[meldIndex];
   if (!meld) {
@@ -1618,6 +1670,8 @@ function saveSavedPlanEdits(planId) {
 
   const currentPlan = state.savedPlans[planIndex];
   const updatedPlan = applyDraftToSavedPlan(currentPlan, draft, savedPlansGradeValueIndex(), {
+    gearRows: state?.data?.gear?.rows,
+    useGearHq: state?.gear?.useHq,
     foodRows: getFoodRows(),
     overmeldAllowedGradesByStat: state.savedPlansUi.overmeldAllowedGradesByStat,
   }).plan;
@@ -2615,6 +2669,9 @@ function render() {
     },
     onToggleSavedPlanEdit: ({ planId }) => {
       toggleSavedPlanEdit(planId);
+    },
+    onCopySavedPlan: ({ planId }) => {
+      copySavedPlan(planId);
     },
     onSavedPlanDraftChange: ({ planId, pieceIndex, meldIndex, field, value }) => {
       updateSavedPlanDraftField({ planId, pieceIndex, meldIndex, field, value });

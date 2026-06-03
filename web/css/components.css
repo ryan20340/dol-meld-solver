@@ -712,6 +712,26 @@ td {
   white-space: nowrap;
 }
 
+.saved-plan-piece-gear-dropdown {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.saved-plan-piece-gear-dropdown .icon-dropdown-trigger {
+  padding: 3px 6px;
+  border-radius: 6px;
+  font-weight: 400;
+}
+
+.saved-plan-piece-gear-dropdown .icon-dropdown-menu {
+  min-width: min(420px, calc(100vw - 32px));
+}
+
+.piece-stat-total {
+  margin: 4px 0 6px;
+}
+
 .saved-plan-food-quality-row {
   margin-top: 0;
 }

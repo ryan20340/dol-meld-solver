@@ -2,6 +2,9 @@ import { buildXivIconUrl, normalizeIconId } from "../utils/icons.js";
 import { normalizeNonNegativeInteger, normalizeOptionalPriority } from "../utils/normalize.js";
 import { hasAnyTargets, STAT_KEYS } from "../utils/stats.js";
 
+const IMAGE_PLACEHOLDER_SRC =
+  "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
+const INITIAL_DROPDOWN_PRELOAD_COUNT = 12;
 const STAT_DISPLAY = Object.freeze({
   gathering: "Gathering",
   perception: "Perception",
@@ -691,7 +694,187 @@ function buildPieceCapSummary(piece) {
   if (capProgress.length === 0) {
     return "";
   }
-  return `<div class="muted piece-cap-summary">${escapeHtml(capProgress.join(" | "))}</div>`;
+  return `<div class="muted piece-cap-summary"><strong>Melds:</strong> ${escapeHtml(capProgress.join(" | "))}</div>`;
+}
+
+function gearRowTrackedStatTotal(row) {
+  return STAT_KEYS.reduce((total, statKey) => {
+    return (
+      total +
+      normalizeNonNegativeInteger(row?.tracked_base_stats?.[statKey]) +
+      normalizeNonNegativeInteger(row?.tracked_special_stats?.[statKey])
+    );
+  }, 0);
+}
+
+function gearRowTrackedStats(row, options = {}) {
+  const base = {
+    gathering: normalizeNonNegativeInteger(row?.tracked_base_stats?.gathering),
+    perception: normalizeNonNegativeInteger(row?.tracked_base_stats?.perception),
+    gp: normalizeNonNegativeInteger(row?.tracked_base_stats?.gp),
+  };
+  const special = {
+    gathering: normalizeNonNegativeInteger(row?.tracked_special_stats?.gathering),
+    perception: normalizeNonNegativeInteger(row?.tracked_special_stats?.perception),
+    gp: normalizeNonNegativeInteger(row?.tracked_special_stats?.gp),
+  };
+  const includeSpecial = row?.can_be_hq ? options?.gearUseHq === true : true;
+  if (!includeSpecial) {
+    return base;
+  }
+  return {
+    gathering: base.gathering + special.gathering,
+    perception: base.perception + special.perception,
+    gp: base.gp + special.gp,
+  };
+}
+
+function meldTotalsForPiece(piece) {
+  const totals = {
+    gathering: 0,
+    perception: 0,
+    gp: 0,
+  };
+  const melds = Array.isArray(piece?.melds) ? piece.melds : [];
+  for (const meld of melds) {
+    const statKey = String(meld?.stat ?? "").toLowerCase();
+    if (!STAT_KEYS.includes(statKey)) {
+      continue;
+    }
+    totals[statKey] += normalizeNonNegativeInteger(meld?.appliedValue);
+  }
+  return totals;
+}
+
+function gearRowForPiece(piece, gearRows) {
+  const pieceId = normalizeNonNegativeInteger(piece?.pieceId);
+  const slotKey = String(piece?.slot ?? "");
+  return (Array.isArray(gearRows) ? gearRows : []).find((row) => (
+    normalizeNonNegativeInteger(row?.id) === pieceId &&
+    String(row?.slot ?? "") === slotKey
+  )) ?? null;
+}
+
+function buildPieceStatTotal(piece, options = {}) {
+  const gearRow = gearRowForPiece(piece, options?.gearRows);
+  if (!gearRow) {
+    return "";
+  }
+  const base = gearRowTrackedStats(gearRow, options);
+  const melds = meldTotalsForPiece(piece);
+  const totals = {
+    gathering: base.gathering + melds.gathering,
+    perception: base.perception + melds.perception,
+    gp: base.gp + melds.gp,
+  };
+  return `
+    <div class="muted piece-stat-total">
+      <strong>Total:</strong> G ${totals.gathering} P ${totals.perception} GP ${totals.gp}
+    </div>
+  `;
+}
+
+function gearRowsForSavedPlanPiece(piece, gearRows) {
+  const slotKey = String(piece?.slot ?? "");
+  const selectedId = normalizeNonNegativeInteger(piece?.pieceId);
+  const rows = (Array.isArray(gearRows) ? gearRows : [])
+    .filter((row) => String(row?.slot ?? "") === slotKey && gearRowTrackedStatTotal(row) > 0)
+    .sort((left, right) => {
+      const itemLevelDiff = normalizeNonNegativeInteger(right?.item_level) - normalizeNonNegativeInteger(left?.item_level);
+      if (itemLevelDiff !== 0) {
+        return itemLevelDiff;
+      }
+      const nameDiff = String(left?.name ?? "").localeCompare(String(right?.name ?? ""));
+      if (nameDiff !== 0) {
+        return nameDiff;
+      }
+      return normalizeNonNegativeInteger(left?.id) - normalizeNonNegativeInteger(right?.id);
+    });
+
+  if (selectedId > 0 && !rows.some((row) => normalizeNonNegativeInteger(row?.id) === selectedId)) {
+    rows.unshift({
+      id: selectedId,
+      name: String(piece?.pieceName ?? `Item ${selectedId}`),
+      item_level: "?",
+    });
+  }
+
+  return rows;
+}
+
+function buildSavedPlanPieceGearSelect(piece, options = {}) {
+  const rows = gearRowsForSavedPlanPiece(piece, options?.gearRows);
+  if (rows.length === 0) {
+    return `<span>${escapeHtml(SLOT_DISPLAY[piece?.slot] ?? piece?.slot ?? "")} - ${escapeHtml(piece?.pieceName ?? "Unknown piece")}</span>`;
+  }
+
+  const selectedId = normalizeNonNegativeInteger(piece?.pieceId);
+  const pieceIndex = normalizeNonNegativeInteger(options?.pieceIndex);
+  const entries = rows.map((row) => {
+    const itemId = normalizeNonNegativeInteger(row?.id);
+    const itemLevel = row?.item_level == null ? "?" : row.item_level;
+    const label = `${row?.name ?? `Item ${itemId}`} (i${itemLevel})`;
+    const iconId = normalizeIconId(row?.icon_id);
+    return {
+      itemId,
+      label,
+      iconUrl: iconId > 0
+        ? buildXivIconUrl(iconId, {
+            useHqVariant: options?.gearUseHq === true && row?.can_be_hq === true,
+          })
+        : "",
+    };
+  });
+  const selectedEntry =
+    entries.find((entry) => entry.itemId === selectedId) ??
+    entries[0] ??
+    { itemId: selectedId, label: String(piece?.pieceName ?? "Unknown piece"), iconUrl: "" };
+  const selectedIconHtml = selectedEntry.iconUrl
+    ? `<img class="item-icon item-icon-slot" src="${selectedEntry.iconUrl}" alt="${escapeHtml(`${selectedEntry.label} icon`)}" loading="lazy" decoding="async">`
+    : '<span class="item-icon item-icon-slot item-icon-placeholder" aria-hidden="true"></span>';
+  const optionsHtml = rows
+    .map((row, index) => {
+      const entry = entries[index];
+      const selectedClass = entry.itemId === selectedEntry.itemId ? " icon-dropdown-option-selected" : "";
+      const iconHtml = entry.iconUrl
+        ? `<img class="item-icon item-icon-slot" src="${IMAGE_PLACEHOLDER_SRC}" data-src="${entry.iconUrl}" alt="${escapeHtml(`${entry.label} icon`)}" loading="lazy" decoding="async">`
+        : '<span class="item-icon item-icon-slot item-icon-placeholder" aria-hidden="true"></span>';
+      return `
+        <button
+          type="button"
+          class="icon-dropdown-option${selectedClass}"
+          data-saved-plan-piece-gear-value="${entry.itemId}"
+          title="${escapeHtml(entry.label)}"
+        >
+          <span class="item-with-icon">
+            ${iconHtml}
+            <span>${escapeHtml(entry.label)}</span>
+          </span>
+        </button>
+      `;
+    })
+    .join("");
+
+  return `
+    <span>${escapeHtml(SLOT_DISPLAY[piece?.slot] ?? piece?.slot ?? "")} - </span>
+    <div
+      class="icon-dropdown saved-plan-piece-gear-dropdown"
+      data-plan-id="${escapeHtml(options?.planId)}"
+      data-piece-index="${pieceIndex}"
+      tabindex="0"
+    >
+      <button type="button" class="icon-dropdown-trigger" data-saved-plan-piece-gear-trigger aria-haspopup="listbox" aria-expanded="false">
+        <span class="item-with-icon">
+          ${selectedIconHtml}
+          <span class="icon-dropdown-trigger-label">${escapeHtml(selectedEntry.label)}</span>
+        </span>
+        <span class="icon-dropdown-caret" aria-hidden="true">&#9662;</span>
+      </button>
+      <div class="icon-dropdown-menu" role="listbox" aria-label="${escapeHtml(SLOT_DISPLAY[piece?.slot] ?? piece?.slot ?? "Gear")} options">
+        ${optionsHtml}
+      </div>
+    </div>
+  `;
 }
 
 function buildPieceLayout(piece, options = {}) {
@@ -705,8 +888,13 @@ function buildPieceLayout(piece, options = {}) {
   const pieceIconHtml = buildItemIconHtml(pieceIconId, pieceNameRaw, "item-icon item-icon-piece", {
     useHqVariant: options?.gearUseHq === true && pieceCanBeHq,
   });
+  const pieceHeadIconHtml = options?.isEditing ? "" : pieceIconHtml;
   const melds = Array.isArray(piece?.melds) ? piece.melds : [];
   const pieceLayoutClass = "piece-layout";
+  const pieceHeadContent = options?.isEditing
+    ? buildSavedPlanPieceGearSelect(piece, options)
+    : `<span>${slot} - ${pieceName}</span>`;
+  const pieceStatTotal = buildPieceStatTotal(piece, options);
 
   if (melds.length === 0) {
     const maxMateriaSlots = Number(piece?.maxMateriaSlots) || 0;
@@ -717,9 +905,10 @@ function buildPieceLayout(piece, options = {}) {
     return `
       <div class="${pieceLayoutClass}">
         <div class="piece-head item-with-icon">
-          ${pieceIconHtml}
-          <span>${slot} - ${pieceName}</span>
+          ${pieceHeadIconHtml}
+          ${pieceHeadContent}
         </div>
+        ${pieceStatTotal}
         <div class="muted">${escapeHtml(noMeldReason)}</div>
       </div>
     `;
@@ -732,9 +921,10 @@ function buildPieceLayout(piece, options = {}) {
   return `
     <div class="${pieceLayoutClass}">
       <div class="piece-head item-with-icon">
-        ${pieceIconHtml}
-        <span>${slot} - ${pieceName}</span>
+        ${pieceHeadIconHtml}
+        ${pieceHeadContent}
       </div>
+      ${pieceStatTotal}
       <ul class="meld-list">${meldLines}</ul>
       ${pieceCapSummary}
     </div>
@@ -1097,6 +1287,7 @@ function buildSavedPlanCardHtml(savedPlan, state, iconContext = {}) {
     perception: normalizeNonNegativeInteger(state?.targets?.perception),
     gp: normalizeNonNegativeInteger(state?.targets?.gp),
   };
+  const gearRows = Array.isArray(state?.data?.gear?.rows) ? state.data.gear.rows : [];
   const foodRows = Array.isArray(state?.data?.food?.rows) ? state.data.food.rows : [];
   const quality = previewPlan?.food?.useHq ? "HQ" : "NQ";
   const foodText = previewPlan?.food
@@ -1120,6 +1311,7 @@ function buildSavedPlanCardHtml(savedPlan, state, iconContext = {}) {
     <div class="saved-plan-actions">
       <button type="button" data-action="saved-plan-view" data-plan-id="${escapeHtml(savedPlanId)}" ${isEditing ? "disabled" : ""}>${isViewing ? "Hide" : "View"}</button>
       <button type="button" data-action="saved-plan-edit" data-plan-id="${escapeHtml(savedPlanId)}">${isEditing ? "Stop Editing" : "Edit"}</button>
+      <button type="button" data-action="saved-plan-copy" data-plan-id="${escapeHtml(savedPlanId)}" ${isEditing ? "disabled" : ""}>Copy</button>
       <button type="button" data-action="saved-plan-refine" data-plan-id="${escapeHtml(savedPlanId)}" ${isEditing ? "disabled" : ""}>Refine</button>
       ${
         advancedEnabled
@@ -1147,6 +1339,7 @@ function buildSavedPlanCardHtml(savedPlan, state, iconContext = {}) {
           availableGradesByStat: state?.savedPlansUi?.availableGradesByStat,
           overmeldAllowedGradesByStat: state?.savedPlansUi?.overmeldAllowedGradesByStat,
           gradeValueIndexByStat: state?.savedPlansUi?.gradeValueIndexByStat,
+          gearRows,
           foodRows,
           gearIconIdByItemId: iconContext?.gearIconIdByItemId,
           foodIconIdByItemId: iconContext?.foodIconIdByItemId,
@@ -1291,12 +1484,123 @@ function buildPlansRows(row, resultIndex, state, iconContext = {}) {
   }).join("");
 }
 
+function closeSavedPlanGearDropdowns(resultsPanelElement) {
+  resultsPanelElement.querySelectorAll(".saved-plan-piece-gear-dropdown").forEach((dropdown) => {
+    dropdown.classList.remove("open");
+    const trigger = dropdown.querySelector("[data-saved-plan-piece-gear-trigger]");
+    if (trigger) {
+      trigger.setAttribute("aria-expanded", "false");
+    }
+  });
+}
+
+function loadPendingDropdownImage(img) {
+  const nextSrc = img?.getAttribute("data-src");
+  if (!nextSrc) {
+    return;
+  }
+  img.setAttribute("src", nextSrc);
+  img.removeAttribute("data-src");
+}
+
+function preloadTopDropdownImages(menu, limit = INITIAL_DROPDOWN_PRELOAD_COUNT) {
+  Array.from(menu.querySelectorAll("img[data-src]"))
+    .slice(0, Math.max(0, Number(limit) || 0))
+    .forEach((img) => loadPendingDropdownImage(img));
+}
+
+function ensureDropdownLazyImageLoading(dropdown) {
+  const menu = dropdown.querySelector(".icon-dropdown-menu");
+  if (!menu) {
+    return;
+  }
+
+  preloadTopDropdownImages(menu, INITIAL_DROPDOWN_PRELOAD_COUNT);
+  const pendingImages = Array.from(menu.querySelectorAll("img[data-src]"));
+  if (pendingImages.length === 0) {
+    return;
+  }
+
+  if (typeof window !== "undefined" && "IntersectionObserver" in window) {
+    if (!dropdown.__iconLazyObserver) {
+      dropdown.__iconLazyObserver = new window.IntersectionObserver(
+        (entries, observer) => {
+          const visibleEntries = entries
+            .filter((entry) => entry.isIntersecting)
+            .sort((left, right) => {
+              const leftTop = Number(left?.target?.offsetTop) || 0;
+              const rightTop = Number(right?.target?.offsetTop) || 0;
+              return leftTop - rightTop;
+            });
+          for (const entry of visibleEntries) {
+            loadPendingDropdownImage(entry.target);
+            observer.unobserve(entry.target);
+          }
+        },
+        {
+          root: menu,
+          rootMargin: "80px 0px",
+          threshold: 0.01,
+        },
+      );
+    }
+    pendingImages.forEach((img) => dropdown.__iconLazyObserver.observe(img));
+    return;
+  }
+
+  pendingImages.slice(0, 20).forEach((img) => loadPendingDropdownImage(img));
+}
+
+function wireSavedPlanGearDropdowns(resultsPanelElement, handlers) {
+  resultsPanelElement.querySelectorAll(".saved-plan-piece-gear-dropdown").forEach((dropdown) => {
+    const trigger = dropdown.querySelector("[data-saved-plan-piece-gear-trigger]");
+    if (trigger) {
+      trigger.addEventListener("click", () => {
+        const wasOpen = dropdown.classList.contains("open");
+        closeSavedPlanGearDropdowns(resultsPanelElement);
+        if (!wasOpen) {
+          dropdown.classList.add("open");
+          trigger.setAttribute("aria-expanded", "true");
+          ensureDropdownLazyImageLoading(dropdown);
+        }
+      });
+    }
+
+    dropdown.addEventListener("focusout", (event) => {
+      const nextFocused = event.relatedTarget;
+      if (!nextFocused || !dropdown.contains(nextFocused)) {
+        dropdown.classList.remove("open");
+        if (trigger) {
+          trigger.setAttribute("aria-expanded", "false");
+        }
+      }
+    });
+
+    dropdown.querySelectorAll("[data-saved-plan-piece-gear-value]").forEach((optionButton) => {
+      optionButton.addEventListener("click", (event) => {
+        dropdown.classList.remove("open");
+        if (trigger) {
+          trigger.setAttribute("aria-expanded", "false");
+        }
+        handlers?.onSavedPlanDraftChange?.({
+          planId: dropdown.getAttribute("data-plan-id"),
+          pieceIndex: normalizeNonNegativeInteger(dropdown.getAttribute("data-piece-index")),
+          meldIndex: 0,
+          field: "pieceId",
+          value: event.currentTarget.getAttribute("data-saved-plan-piece-gear-value"),
+        });
+      });
+    });
+  });
+}
+
 function wireEvents(resultsPanelElement, handlers) {
   const callbackByAction = {
     "result-plan-save": handlers?.onSaveResultPlan,
     "result-plan-toggle-diff": handlers?.onToggleResultPlanDiff,
     "saved-plan-view": handlers?.onToggleSavedPlanView,
     "saved-plan-edit": handlers?.onToggleSavedPlanEdit,
+    "saved-plan-copy": handlers?.onCopySavedPlan,
     "saved-plan-delete": handlers?.onDeleteSavedPlan,
     "saved-plan-export": handlers?.onExportSavedPlan,
     "saved-plan-refine": handlers?.onRefineSavedPlan,
@@ -1355,6 +1659,8 @@ function wireEvents(resultsPanelElement, handlers) {
     });
   });
 
+  wireSavedPlanGearDropdowns(resultsPanelElement, handlers);
+
   resultsPanelElement.querySelectorAll("select[data-action]").forEach((select) => {
     select.addEventListener("change", (event) => {
       const action = event.currentTarget.getAttribute("data-action");
@@ -1391,6 +1697,19 @@ function wireEvents(resultsPanelElement, handlers) {
           pieceIndex: 0,
           meldIndex: 0,
           field: "foodItemId",
+          value: event.currentTarget.value,
+        });
+        return;
+      }
+      if (action === "saved-plan-edit-piece") {
+        if (typeof handlers?.onSavedPlanDraftChange !== "function") {
+          return;
+        }
+        handlers.onSavedPlanDraftChange({
+          planId: event.currentTarget.getAttribute("data-plan-id"),
+          pieceIndex: normalizeNonNegativeInteger(event.currentTarget.getAttribute("data-piece-index")),
+          meldIndex: 0,
+          field: "pieceId",
           value: event.currentTarget.value,
         });
         return;
