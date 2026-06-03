@@ -27,6 +27,8 @@ export function buildNormalSolveInput(state, options = {}) {
     // Present only when refining a saved plan; lets the engine bias the search
     // toward layouts that re-meld the fewest materia. Inert for normal solves.
     refineBaseline: options?.refineBaseline,
+    // Per-piece Block constraints (caps usable materia slots). Refine only.
+    slotConstraints: options?.slotConstraints,
   };
 }
 

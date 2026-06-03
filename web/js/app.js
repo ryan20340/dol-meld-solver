@@ -1170,6 +1170,41 @@ function buildRefineBaselineTokens(savedPlan) {
   return { bySlot };
 }
 
+// Sentinel slot count meaning "no cap" — larger than any piece's materia slots.
+const REFINE_NO_SLOT_CAP = 99;
+
+// Per-piece count of materia slots Refine is allowed to use, derived from each
+// piece's Block setting (blockedFromSlotIndex). Keyed by gear slot and consumed
+// in saved-plan order (so the two rings map positionally), mirroring the baseline
+// token layout. Returns null when nothing is blocked, leaving normal solves and
+// unconstrained refines on the gear's natural slot counts.
+function buildRefineSlotConstraints(savedPlan) {
+  const pieces = Array.isArray(savedPlan?.pieceMelds) ? savedPlan.pieceMelds : [];
+  const bySlot = {};
+  let hasConstraint = false;
+  for (const piece of pieces) {
+    const slot = String(piece?.slot ?? "");
+    if (!slot) {
+      continue;
+    }
+    const maxSlots = normalizeNonNegativeInteger(piece?.maxMateriaSlots, 0);
+    const blocked = piece?.blockedFromSlotIndex;
+    // Unconstrained pieces get a no-cap sentinel (larger than any piece's slots)
+    // rather than a count derived from maxMateriaSlots, which could be stale on
+    // older saved plans. Only an explicit Block imposes a real cap.
+    let available = REFINE_NO_SLOT_CAP;
+    if (blocked != null) {
+      available = Math.max(0, Math.min(maxSlots, normalizeNonNegativeInteger(blocked, maxSlots)));
+      hasConstraint = true;
+    }
+    if (!Array.isArray(bySlot[slot])) {
+      bySlot[slot] = [];
+    }
+    bySlot[slot].push(available);
+  }
+  return hasConstraint ? { bySlot } : null;
+}
+
 // Materia slots within a single piece are interchangeable: only the SET of
 // materia matters, not which physical slot holds which. The solver emits melds
 // in a canonical slot order that rarely matches the baseline's order, so a
@@ -1829,28 +1864,133 @@ function updateSavedPlanDraftField({ planId, pieceIndex, meldIndex, field, value
     return;
   }
   const piece = draft?.pieceMelds?.[pieceIndex];
-  const meld = piece?.melds?.[meldIndex];
-  if (!meld) {
+  if (!piece) {
+    return;
+  }
+  const slotIndex = normalizeNonNegativeInteger(
+    meldIndex != null ? meldIndex : value?.slotIndex,
+    0,
+  );
+
+  if (field === "slotMode") {
+    applyDraftSlotMode(piece, slotIndex, String(value ?? "").toLowerCase());
+    refreshSavedPlansUiAndRender();
     return;
   }
 
+  // Legacy: stat set directly on an existing meld (kept for compatibility).
   if (field === "stat") {
-    const nextValue = String(value ?? "").toLowerCase();
-    if (STAT_KEYS.includes(nextValue)) {
-      meld.stat = nextValue;
-      const legalGrades = allowedGradesForDraftMeld(nextValue, meld);
-      if (Array.isArray(legalGrades) && legalGrades.length > 0) {
-        const currentGrade = normalizeNonNegativeInteger(meld.grade, 1);
-        if (!legalGrades.includes(currentGrade)) {
-          meld.grade = legalGrades[legalGrades.length - 1];
-        }
-      }
-    }
-  } else if (field === "grade") {
-    meld.grade = Math.max(1, Math.min(12, normalizeNonNegativeInteger(value, 1)));
+    setDraftSlotStat(piece, slotIndex, String(value ?? "").toLowerCase());
+    refreshSavedPlansUiAndRender();
+    return;
   }
 
-  refreshSavedPlansUiAndRender();
+  if (field === "grade") {
+    const meld = findDraftMeldAtSlot(piece, slotIndex);
+    if (meld) {
+      meld.grade = Math.max(1, Math.min(12, normalizeNonNegativeInteger(value, 1)));
+    }
+    refreshSavedPlansUiAndRender();
+    return;
+  }
+}
+
+function findDraftMeldAtSlot(piece, slotIndex) {
+  const melds = Array.isArray(piece?.melds) ? piece.melds : [];
+  return melds.find((meld) => normalizeNonNegativeInteger(meld?.slotIndex) === slotIndex) ?? null;
+}
+
+// Overmeld classification for a freshly created draft meld, derived from the
+// piece's guaranteed-slot count.
+function draftSlotOvermeldInfo(piece, slotIndex) {
+  const rawGuaranteed = Number(piece?.guaranteedMateriaSlots);
+  const hasGuaranteed = Number.isFinite(rawGuaranteed) && rawGuaranteed >= 0;
+  const guaranteedSlots = hasGuaranteed ? Math.floor(rawGuaranteed) : 0;
+  const isOvermeld = hasGuaranteed ? slotIndex >= guaranteedSlots : false;
+  return {
+    isOvermeld,
+    overmeldIndex: isOvermeld ? slotIndex - guaranteedSlots : -1,
+  };
+}
+
+// Put a materia of `statKey` in `slotIndex`, creating the meld if the slot was
+// empty and snapping the grade to a legal value for the slot.
+function setDraftSlotStat(piece, slotIndex, statKey) {
+  if (!STAT_KEYS.includes(statKey)) {
+    return;
+  }
+  const { isOvermeld, overmeldIndex } = draftSlotOvermeldInfo(piece, slotIndex);
+  let meld = findDraftMeldAtSlot(piece, slotIndex);
+  const isNew = !meld;
+  if (!meld) {
+    meld = {
+      // New materia default to the top grade; the legal-grade snap below clamps
+      // it down to the highest grade allowed in this (over)meld slot.
+      slotIndex,
+      isOvermeld,
+      overmeldIndex,
+      stat: statKey,
+      grade: 12,
+      itemId: 0,
+      name: "",
+      rawValue: 0,
+      appliedValue: 0,
+    };
+    if (!Array.isArray(piece.melds)) {
+      piece.melds = [];
+    }
+    piece.melds.push(meld);
+  }
+  meld.stat = statKey;
+  meld.isOvermeld = isOvermeld;
+  meld.overmeldIndex = overmeldIndex;
+  const legalGrades = allowedGradesForDraftMeld(statKey, meld);
+  if (Array.isArray(legalGrades) && legalGrades.length > 0) {
+    const currentGrade = normalizeNonNegativeInteger(meld.grade, 1);
+    if (isNew || !legalGrades.includes(currentGrade)) {
+      meld.grade = legalGrades[legalGrades.length - 1];
+    }
+  }
+}
+
+// Apply a slot-mode change (stat / None / Block) with the meld-order cascade.
+function applyDraftSlotMode(piece, slotIndex, mode) {
+  const maxMateriaSlots = normalizeNonNegativeInteger(piece?.maxMateriaSlots, 0);
+  const dropMeldAtSlot = () => {
+    if (Array.isArray(piece?.melds)) {
+      piece.melds = piece.melds.filter(
+        (meld) => normalizeNonNegativeInteger(meld?.slotIndex) !== slotIndex,
+      );
+    }
+  };
+
+  if (mode === "block") {
+    // Block this slot and, by meld order, everything above it.
+    piece.blockedFromSlotIndex = slotIndex;
+    if (Array.isArray(piece?.melds)) {
+      piece.melds = piece.melds.filter(
+        (meld) => normalizeNonNegativeInteger(meld?.slotIndex) < slotIndex,
+      );
+    }
+    return;
+  }
+
+  // Any non-block mode makes this slot available. If it sat in the blocked
+  // suffix, unblocking it must unblock everything below it too (you cannot have
+  // an available slot above a blocked one). So the new block boundary is just
+  // above this slot — or cleared entirely if that reaches the piece max.
+  const currentBlock = piece?.blockedFromSlotIndex;
+  if (currentBlock != null && normalizeNonNegativeInteger(currentBlock) <= slotIndex) {
+    const nextBoundary = slotIndex + 1;
+    piece.blockedFromSlotIndex = nextBoundary >= maxMateriaSlots ? null : nextBoundary;
+  }
+
+  if (mode === "none") {
+    dropMeldAtSlot();
+    return;
+  }
+
+  setDraftSlotStat(piece, slotIndex, mode);
 }
 
 function saveSavedPlanEdits(planId) {
@@ -2164,6 +2304,9 @@ async function refineSavedPlan(planId, options = {}) {
       ...buildRefineBaselineTokens(savedPlan),
       useCascade: !disregardSlotOrder,
     },
+    // Per-piece Block constraints: caps how many materia slots Refine may use on
+    // each piece (and, by meld order, forbids everything above a blocked slot).
+    slotConstraints: buildRefineSlotConstraints(savedPlan),
     postProcessResults: (rows) => {
       const rowsWithTargets = (Array.isArray(rows) ? rows : []).map((row) => ({
         ...row,
@@ -2314,6 +2457,7 @@ function buildSolveInputForMode(solveMode, options = {}) {
       baseGathererGp: BASE_GATHERER_GP,
       frontierResultLimit: options?.frontierResultLimit,
       refineBaseline: options?.refineBaseline,
+      slotConstraints: options?.slotConstraints,
     });
   }
 
@@ -2321,6 +2465,7 @@ function buildSolveInputForMode(solveMode, options = {}) {
     targetsOverride: options?.targetsOverride,
     baseGathererGp: BASE_GATHERER_GP,
     refineBaseline: options?.refineBaseline,
+    slotConstraints: options?.slotConstraints,
   });
 }
 

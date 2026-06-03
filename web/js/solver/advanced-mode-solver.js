@@ -16,6 +16,7 @@ export function buildAdvancedSolveInput(state, options = {}) {
     useGearHq: state?.gear?.useHq,
     baseGathererGp: options?.baseGathererGp,
     refineBaseline: options?.refineBaseline,
+    slotConstraints: options?.slotConstraints,
   };
 }
 

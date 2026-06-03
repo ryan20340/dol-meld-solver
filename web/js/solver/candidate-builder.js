@@ -40,7 +40,7 @@ function getEffectiveGain(materia, pieceCaps, candidateTotals) {
   return Math.min(baseValue, remaining);
 }
 
-function buildPieceSlots(piece, rules) {
+function buildPieceSlots(piece, rules, maxSlotsOverride = null) {
   const maxTotalSlots = normalizePositiveInteger(
     rules?.constants?.max_total_materia_slots_per_piece,
     5,
@@ -70,6 +70,13 @@ function buildPieceSlots(piece, rules) {
       isOvermeld: true,
       overmeldIndex: idx,
     });
+  }
+
+  // Refine Block: cap the usable slots from the top down (slots fill in order, so
+  // a blocked slot and everything above it are simply removed). Only applies when
+  // the override is below the piece's natural slot count.
+  if (Number.isFinite(maxSlotsOverride) && maxSlotsOverride >= 0 && maxSlotsOverride < slots.length) {
+    return slots.slice(0, maxSlotsOverride);
   }
 
   return slots;
@@ -466,8 +473,11 @@ export function buildCandidatesForPiece(piece, options) {
     ? Math.floor(rawMaxCandidatesPerPiece)
     : Number.POSITIVE_INFINITY;
   const materiaRows = Array.isArray(options?.materiaRows) ? options.materiaRows : [];
+  const rawMaxSlotsOverride = Number(options?.maxSlotsOverride);
+  const maxSlotsOverride =
+    Number.isFinite(rawMaxSlotsOverride) && rawMaxSlotsOverride >= 0 ? Math.floor(rawMaxSlotsOverride) : null;
 
-  const slots = buildPieceSlots(piece, rules);
+  const slots = buildPieceSlots(piece, rules, maxSlotsOverride);
   if (slots.length === 0 || materiaRows.length === 0) {
     return [buildEmptyCandidate(piece)];
   }

@@ -124,8 +124,30 @@ function normalizeMeld(meld) {
   };
 }
 
+// Blocking a materia slot forbids it for re-melding, and meld order means every
+// slot above a blocked one is unusable too. We store that as a single index: the
+// lowest blocked slot (null = nothing blocked). Slots [0, blockedFromSlotIndex)
+// are available; [blockedFromSlotIndex, max) are blocked. A single index makes the
+// cascade impossible to express inconsistently.
+function normalizeBlockedFromSlotIndex(value, maxMateriaSlots) {
+  if (value == null) {
+    return null;
+  }
+  const max = normalizeNonNegativeInt(maxMateriaSlots, 0);
+  const clamped = Math.max(0, Math.min(max, normalizeNonNegativeInt(value, max)));
+  // Blocking at or past the max blocks nothing real, so treat it as "no block".
+  return clamped >= max ? null : clamped;
+}
+
 function normalizePiece(piece) {
-  const melds = Array.isArray(piece?.melds) ? piece.melds.map(normalizeMeld) : [];
+  const maxMateriaSlots = normalizeNonNegativeInt(piece?.maxMateriaSlots, 0);
+  const blockedFromSlotIndex = normalizeBlockedFromSlotIndex(piece?.blockedFromSlotIndex, maxMateriaSlots);
+  const allMelds = Array.isArray(piece?.melds) ? piece.melds.map(normalizeMeld) : [];
+  // Drop any materia sitting in (or above) a blocked slot — it cannot exist there.
+  const melds =
+    blockedFromSlotIndex == null
+      ? allMelds
+      : allMelds.filter((meld) => normalizeNonNegativeInt(meld?.slotIndex, 0) < blockedFromSlotIndex);
   const trackedMeldCaps = {
     gathering: normalizeNonNegativeInt(piece?.trackedMeldCaps?.gathering, 0),
     perception: normalizeNonNegativeInt(piece?.trackedMeldCaps?.perception, 0),
@@ -135,10 +157,11 @@ function normalizePiece(piece) {
     pieceId: normalizeNonNegativeInt(piece?.pieceId, 0),
     slot: String(piece?.slot ?? ""),
     pieceName: String(piece?.pieceName ?? "Unknown piece"),
-    maxMateriaSlots: normalizeNonNegativeInt(piece?.maxMateriaSlots, 0),
+    maxMateriaSlots,
     guaranteedMateriaSlots:
       piece?.guaranteedMateriaSlots == null ? null : normalizeNonNegativeInt(piece.guaranteedMateriaSlots, 0),
     advancedMeldingPermitted: Boolean(piece?.advancedMeldingPermitted),
+    blockedFromSlotIndex,
     trackedMeldCaps,
     melds,
   };
@@ -525,10 +548,15 @@ function revalidatePieceMelds(piece, gradeValueIndex, overmeldAllowedGradesBySta
   const rawGuaranteedSlots = Number(piece?.guaranteedMateriaSlots);
   const hasGuaranteedSlots = Number.isFinite(rawGuaranteedSlots) && rawGuaranteedSlots >= 0;
   const guaranteedSlots = Math.max(0, Math.floor(rawGuaranteedSlots));
+  const blockedFromSlotIndex = normalizeBlockedFromSlotIndex(piece?.blockedFromSlotIndex, maxSlots);
   const melds = Array.isArray(piece?.melds) ? piece.melds : [];
   const normalizedMelds = melds.map((meld, meldIndex) => {
     const slotIndex = normalizeNonNegativeInt(meld?.slotIndex, meldIndex);
     if (hasMaxSlots && slotIndex >= maxSlots) {
+      return null;
+    }
+    // A blocked slot (and everything above it) cannot hold materia.
+    if (blockedFromSlotIndex != null && slotIndex >= blockedFromSlotIndex) {
       return null;
     }
     const isOvermeld = hasGuaranteedSlots ? slotIndex >= guaranteedSlots : Boolean(meld?.isOvermeld);

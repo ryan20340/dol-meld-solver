@@ -919,6 +919,39 @@ function buildPieceLayout(piece, options = {}) {
     : `<span>${slot} - ${pieceName}</span>`;
   const pieceStatTotal = buildPieceStatTotal(piece, options);
 
+  // Editing shows every materia slot the piece supports, so any slot can be set
+  // to a stat, left open (None), or blocked. Pieces with no slots are unchanged.
+  if (options?.isEditing) {
+    const maxMateriaSlots = Number(piece?.maxMateriaSlots) || 0;
+    if (maxMateriaSlots <= 0) {
+      return `
+        <div class="${pieceLayoutClass}">
+          <div class="piece-head item-with-icon">
+            ${pieceHeadIconHtml}
+            ${pieceHeadContent}
+          </div>
+          ${pieceStatTotal}
+          <div class="muted">No materia slots on this piece</div>
+        </div>
+      `;
+    }
+    const slotRows = [];
+    for (let slotIndex = 0; slotIndex < maxMateriaSlots; slotIndex += 1) {
+      slotRows.push(buildEditableSlotRow(piece, slotIndex, options));
+    }
+    return `
+      <div class="${pieceLayoutClass}">
+        <div class="piece-head item-with-icon">
+          ${pieceHeadIconHtml}
+          ${pieceHeadContent}
+        </div>
+        ${pieceStatTotal}
+        <ul class="meld-list">${slotRows.join("")}</ul>
+        ${buildPieceCapSummary(piece)}
+      </div>
+    `;
+  }
+
   if (melds.length === 0) {
     const maxMateriaSlots = Number(piece?.maxMateriaSlots) || 0;
     const noMeldReason =
@@ -1117,6 +1150,79 @@ function buildStatOptionsHtml(selectedStat) {
     const selected = statKey === selectedStat ? " selected" : "";
     return `<option value="${statKey}"${selected}>${escapeHtml(STAT_DISPLAY[statKey])}</option>`;
   }).join("");
+}
+
+// Per-slot mode options for the saved-plan editor: the three stats, plus None
+// (slot left empty and open for Refine to fill) and Block (slot forbidden; meld
+// order means everything above it is blocked too).
+const SLOT_MODE_NONE = "none";
+const SLOT_MODE_BLOCK = "block";
+
+function buildSlotModeOptionsHtml(selectedMode) {
+  const options = [
+    ...STAT_KEYS.map((statKey) => ({ value: statKey, label: STAT_DISPLAY[statKey] })),
+    { value: SLOT_MODE_NONE, label: "None" },
+    { value: SLOT_MODE_BLOCK, label: "Block" },
+  ];
+  return options
+    .map(({ value, label }) => {
+      const selected = value === selectedMode ? " selected" : "";
+      return `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(label)}</option>`;
+    })
+    .join("");
+}
+
+// One editable row per physical materia slot. Reads the slot's current mode from
+// the (draft-derived) piece: blocked suffix first, then any materia present, else
+// empty/None.
+function buildEditableSlotRow(piece, slotIndex, options = {}) {
+  const planId = options?.planId;
+  const pieceIndex = normalizeNonNegativeInteger(options?.pieceIndex);
+  const rawGuaranteed = Number(piece?.guaranteedMateriaSlots);
+  const hasGuaranteed = Number.isFinite(rawGuaranteed) && rawGuaranteed >= 0;
+  const guaranteedSlots = hasGuaranteed ? Math.floor(rawGuaranteed) : 0;
+  const isOvermeld = hasGuaranteed ? slotIndex >= guaranteedSlots : false;
+  const overmeldIndex = isOvermeld ? slotIndex - guaranteedSlots : -1;
+  const blockedFrom = piece?.blockedFromSlotIndex;
+  const isBlocked = blockedFrom != null && slotIndex >= normalizeNonNegativeInteger(blockedFrom);
+  const meld = (Array.isArray(piece?.melds) ? piece.melds : []).find(
+    (entry) => normalizeNonNegativeInteger(entry?.slotIndex) === slotIndex,
+  );
+  const mode = isBlocked ? SLOT_MODE_BLOCK : meld ? String(meld.stat) : SLOT_MODE_NONE;
+  const dotClass = isBlocked ? "meld-dot meld-dot-blocked" : meldDotClass({ isOvermeld, overmeldIndex });
+  const slotLabel = `Slot ${slotIndex + 1}`;
+  const modeSelect = `
+    <select data-action="saved-plan-edit-slot-mode" data-plan-id="${escapeHtml(planId)}" data-piece-index="${pieceIndex}" data-slot-index="${slotIndex}">
+      ${buildSlotModeOptionsHtml(mode)}
+    </select>`;
+
+  let tail;
+  if (mode === SLOT_MODE_BLOCK) {
+    tail = '<span class="muted saved-plan-inline-meld-meta">Blocked</span>';
+  } else if (mode === SLOT_MODE_NONE) {
+    tail = '<span class="muted saved-plan-inline-meld-meta">Empty — open for refine</span>';
+  } else {
+    const grade = Number(meld?.grade) || 0;
+    const raw = Number(meld?.rawValue) || 0;
+    const applied = Number(meld?.appliedValue) || 0;
+    const legalGrades = legalGradesForMeld(mode, { isOvermeld, overmeldIndex }, options);
+    const gradeOptions = buildGradeOptionsHtml(legalGrades, grade, mode, options?.gradeValueIndexByStat, raw);
+    const capMeta = raw > applied ? `+${applied} (raw +${raw})` : `+${applied}`;
+    tail = `
+      <select data-action="saved-plan-edit-grade" data-plan-id="${escapeHtml(planId)}" data-piece-index="${pieceIndex}" data-slot-index="${slotIndex}">
+        ${gradeOptions}
+      </select>
+      <span class="muted saved-plan-inline-meld-meta">${escapeHtml(capMeta)}</span>`;
+  }
+
+  return `
+    <li class="meld-line meld-line-editable${isBlocked ? " meld-line-blocked" : ""}">
+      <span class="${escapeHtml(dotClass)}"></span>
+      <span class="saved-plan-inline-slot muted">${escapeHtml(slotLabel)}</span>
+      ${modeSelect}
+      ${tail}
+    </li>
+  `;
 }
 
 function buildFoodOptionsHtml(foodRows, selectedFoodItemId) {
@@ -1789,17 +1895,33 @@ function wireEvents(resultsPanelElement, handlers) {
         });
         return;
       }
-      if (action !== "saved-plan-edit-stat" && action !== "saved-plan-edit-grade") {
+      if (
+        action !== "saved-plan-edit-stat" &&
+        action !== "saved-plan-edit-grade" &&
+        action !== "saved-plan-edit-slot-mode"
+      ) {
         return;
       }
       if (typeof handlers?.onSavedPlanDraftChange !== "function") {
         return;
       }
+      const fieldByAction = {
+        "saved-plan-edit-stat": "stat",
+        "saved-plan-edit-grade": "grade",
+        "saved-plan-edit-slot-mode": "slotMode",
+      };
+      // Slot rows are keyed by physical slot index; fall back to meld index for
+      // any legacy stat/grade selects that still emit data-meld-index.
+      const slotAttr = event.currentTarget.getAttribute("data-slot-index");
+      const meldIndex = normalizeNonNegativeInteger(
+        slotAttr != null ? slotAttr : event.currentTarget.getAttribute("data-meld-index"),
+      );
       handlers.onSavedPlanDraftChange({
         planId: event.currentTarget.getAttribute("data-plan-id"),
         pieceIndex: normalizeNonNegativeInteger(event.currentTarget.getAttribute("data-piece-index")),
-        meldIndex: normalizeNonNegativeInteger(event.currentTarget.getAttribute("data-meld-index")),
-        field: action === "saved-plan-edit-stat" ? "stat" : "grade",
+        meldIndex,
+        slotIndex: meldIndex,
+        field: fieldByAction[action],
         value: event.currentTarget.value,
       });
     });

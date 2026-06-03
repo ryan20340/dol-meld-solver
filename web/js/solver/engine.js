@@ -246,6 +246,28 @@ function buildBaselineTokensByPieceIndex(orderedPieces, refineBaseline) {
   });
 }
 
+// Per-piece-index cap on usable materia slots, from the refine Block settings.
+// Keyed by gear slot and consumed in piece order (so the two rings map
+// positionally), mirroring the baseline token layout. Returns null when no
+// constraints were supplied, so normal solves keep the gear's natural slots.
+function buildAvailableSlotsByPieceIndex(orderedPieces, slotConstraints) {
+  const bySlot = slotConstraints?.bySlot;
+  if (!bySlot || typeof bySlot !== "object") {
+    return null;
+  }
+  const queues = new Map();
+  for (const [slot, list] of Object.entries(bySlot)) {
+    queues.set(String(slot), Array.isArray(list) ? [...list] : []);
+  }
+  return orderedPieces.map((piece) => {
+    const queue = queues.get(String(piece?.slot ?? ""));
+    if (Array.isArray(queue) && queue.length > 0) {
+      return normalizeNonNegativeInteger(queue.shift(), Number.POSITIVE_INFINITY);
+    }
+    return null;
+  });
+}
+
 function annotateCandidatesWithBaselineDistance(pieceCandidates, baselineByPieceIndex, useCascade) {
   if (!Array.isArray(baselineByPieceIndex)) {
     return;
@@ -674,13 +696,20 @@ export function solveLegalityOnly(input, options = {}) {
   }
 
   const orderedPieces = sortBySlotOrder(selectedGearRows);
-  const pieceCandidates = orderedPieces.map((piece) => ({
+  // Refine Block constraints: cap usable materia slots per piece (null = the
+  // gear's natural slot count).
+  const availableSlotsByPieceIndex = buildAvailableSlotsByPieceIndex(
+    orderedPieces,
+    input?.slotConstraints,
+  );
+  const pieceCandidates = orderedPieces.map((piece, pieceIndex) => ({
     piece,
     candidates: buildCandidatesForPiece(piece, {
       materiaRows,
       rules,
       maxCandidatesPerPiece,
       useGearHq,
+      maxSlotsOverride: availableSlotsByPieceIndex ? availableSlotsByPieceIndex[pieceIndex] : null,
     }),
   }));
 
