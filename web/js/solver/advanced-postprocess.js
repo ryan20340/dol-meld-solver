@@ -460,6 +460,17 @@ export function compareAdvancedSummaries(left, right) {
   return 0;
 }
 
+export function compareAdvancedBreakpointSummaries(left, right) {
+  const priorityDiff = comparePriorityLedgers(left?.priorityLedger, right?.priorityLedger);
+  if (priorityDiff !== 0) {
+    return priorityDiff;
+  }
+  return (
+    normalizeNonNegativeInteger(right?.breakpointsMet, 0) -
+    normalizeNonNegativeInteger(left?.breakpointsMet, 0)
+  );
+}
+
 function buildAdvancedSummaryFromProfileEvaluations(profileEvaluations) {
   const rows = Array.isArray(profileEvaluations) ? profileEvaluations : [];
   const scoringProfiles = rows.filter(
@@ -476,11 +487,11 @@ function buildAdvancedSummaryFromProfileEvaluations(profileEvaluations) {
   const priorityLedger = mergePriorityLedgers(
     scoringProfiles.map((profileEval) => profileEval?.bestOption?.priorityLedger),
   );
-  const dumpPreferenceScore = rows.reduce(
+  const dumpPreferenceScore = scoringProfiles.reduce(
     (sum, profileEval) => sum + (Number(profileEval?.bestOption?.statDumpPreferenceScore) || 0),
     0,
   );
-  const tiebreakStatSum = rows.reduce(
+  const tiebreakStatSum = scoringProfiles.reduce(
     (sum, profileEval) => sum + normalizeNonNegativeInteger(profileEval?.bestOption?.statSum, 0),
     0,
   );
@@ -536,7 +547,7 @@ function savedPlanTotals(savedPlan) {
   });
 }
 
-function savedPlanTotalsWithoutFood(savedPlan) {
+export function savedPlanTotalsWithoutFood(savedPlan) {
   const base = summarizeTotals(savedPlan?.baseTotalsWithoutMeldsAndFood);
   const meldTotals = sumSavedPlanMeldTotals(savedPlan);
   const computedFromParts = summarizeTotals({
@@ -677,6 +688,54 @@ function compareAdvancedRows(left, right) {
   return 0;
 }
 
+function planAdjustmentCount(plan) {
+  const count = Number(plan?.adjustmentDiff?.count);
+  return Number.isFinite(count) ? Math.max(0, Math.floor(count)) : Number.POSITIVE_INFINITY;
+}
+
+function bestAdjustmentCountForPlans(plans) {
+  const rows = Array.isArray(plans) ? plans : [];
+  return rows.reduce((best, plan) => Math.min(best, planAdjustmentCount(plan)), Number.POSITIVE_INFINITY);
+}
+
+function rowAdjustmentCount(row) {
+  const direct = Number(row?.bestAdjustmentCount);
+  if (Number.isFinite(direct)) {
+    return Math.max(0, Math.floor(direct));
+  }
+  return bestAdjustmentCountForPlans(row?.plans);
+}
+
+function compareAdvancedRowsForRefine(left, right) {
+  const breakpointDiff = compareAdvancedBreakpointSummaries(left?.advanced, right?.advanced);
+  if (breakpointDiff !== 0) {
+    return breakpointDiff;
+  }
+  const scoreDiff = (Number(right?.score) || 0) - (Number(left?.score) || 0);
+  if (scoreDiff !== 0) {
+    return scoreDiff;
+  }
+
+  const leftAdjustment = rowAdjustmentCount(left);
+  const rightAdjustment = rowAdjustmentCount(right);
+  if (leftAdjustment !== rightAdjustment) {
+    return leftAdjustment - rightAdjustment;
+  }
+
+  return compareAdvancedRows(left, right);
+}
+
+function sortAdvancedPlansForRefine(plans) {
+  return [...(Array.isArray(plans) ? plans : [])].sort((left, right) => {
+    const leftAdjustment = planAdjustmentCount(left);
+    const rightAdjustment = planAdjustmentCount(right);
+    if (leftAdjustment !== rightAdjustment) {
+      return leftAdjustment - rightAdjustment;
+    }
+    return 0;
+  });
+}
+
 function buildAdvancedVariantPlanFromRow(row) {
   const sourcePlan = Array.isArray(row?.plans) && row.plans.length > 0 ? row.plans[0] : null;
   const totals = summarizeTotals({
@@ -700,8 +759,9 @@ function buildAdvancedVariantPlanFromRow(row) {
   };
 }
 
-function selectAdvancedPatternVariants(groupRows, maxVariants = DEFAULT_ADVANCED_VARIANT_LIMIT) {
-  const rows = [...(Array.isArray(groupRows) ? groupRows : [])].sort(compareAdvancedRows);
+function selectAdvancedPatternVariants(groupRows, maxVariants = DEFAULT_ADVANCED_VARIANT_LIMIT, options = {}) {
+  const compareRows = options?.preferLowAdjustment === true ? compareAdvancedRowsForRefine : compareAdvancedRows;
+  const rows = [...(Array.isArray(groupRows) ? groupRows : [])].sort(compareRows);
   if (rows.length === 0) {
     return [];
   }
@@ -726,14 +786,15 @@ function selectAdvancedPatternVariants(groupRows, maxVariants = DEFAULT_ADVANCED
   return [buildAdvancedVariantPlanFromRow(rows[0])];
 }
 
-function buildAdvancedRowFromPatternGroup(groupRows, activeScoringProfileCount, variantLimit) {
-  const rows = [...(Array.isArray(groupRows) ? groupRows : [])].sort(compareAdvancedRows);
+function buildAdvancedRowFromPatternGroup(groupRows, activeScoringProfileCount, variantLimit, options = {}) {
+  const compareRows = options?.preferLowAdjustment === true ? compareAdvancedRowsForRefine : compareAdvancedRows;
+  const rows = [...(Array.isArray(groupRows) ? groupRows : [])].sort(compareRows);
   const primary = rows[0];
   if (!primary) {
     return null;
   }
 
-  const plans = selectAdvancedPatternVariants(rows, variantLimit);
+  const plans = selectAdvancedPatternVariants(rows, variantLimit, options);
   const primaryPlan = plans[0] ?? buildAdvancedVariantPlanFromRow(primary);
   const totals = summarizeTotals({
     gathering: primaryPlan?.totalGathering ?? primary?.totalGathering,
@@ -741,6 +802,7 @@ function buildAdvancedRowFromPatternGroup(groupRows, activeScoringProfileCount, 
     gp: primaryPlan?.totalGp ?? primary?.totalGp,
   });
   const breakpointsMet = normalizeNonNegativeInteger(primary?.advanced?.breakpointsMet, Number(primary?.score) || 0);
+  const bestAdjustmentCount = bestAdjustmentCountForPlans(plans);
 
   return {
     ...primary,
@@ -751,6 +813,7 @@ function buildAdvancedRowFromPatternGroup(groupRows, activeScoringProfileCount, 
     food: primaryPlan?.food ?? primary?.food,
     meetsTargets: true,
     plans,
+    ...(Number.isFinite(bestAdjustmentCount) ? { bestAdjustmentCount } : {}),
     advanced: {
       ...(primary?.advanced ?? {}),
       enabledProfileCount: activeScoringProfileCount,
@@ -766,6 +829,8 @@ export function applyAdvancedMode(results, options = {}) {
     1,
     normalizeNonNegativeInteger(options?.variantLimit, DEFAULT_ADVANCED_VARIANT_LIMIT),
   );
+  const decoratePlan = typeof options?.decoratePlan === "function" ? options.decoratePlan : null;
+  const preferLowAdjustment = options?.preferLowAdjustment === true;
 
   const evaluated = rows.map((row) => {
     const baseTotals = {
@@ -781,7 +846,7 @@ export function applyAdvancedMode(results, options = {}) {
     const profilesForRow = profileEvaluations.map((profileEval) => cloneAdvancedProfileSummary(profileEval));
 
     const sourcePlans = Array.isArray(row?.plans) ? row.plans : [];
-    const plans = sourcePlans.map((plan, planIndex) => {
+    const planRows = sourcePlans.map((plan, planIndex) => {
       const planProfiles = profileEvaluations.map((profileEval) => {
         const optionsForProfile = Array.isArray(profileEval?.bestOptions) ? profileEval.bestOptions : [];
         const option =
@@ -811,7 +876,7 @@ export function applyAdvancedMode(results, options = {}) {
 
       const primaryProfileFood = planProfiles[0]?.food ?? row?.food ?? null;
       const primaryProfileTotals = planProfiles[0]?.totals ?? baseTotals;
-      return {
+      const builtPlan = {
         ...plan,
         food: primaryProfileFood,
         totalGathering: normalizeNonNegativeInteger(primaryProfileTotals.gathering, 0),
@@ -822,7 +887,10 @@ export function applyAdvancedMode(results, options = {}) {
           profiles: planProfiles,
         },
       };
+      return decoratePlan ? decoratePlan(builtPlan) : builtPlan;
     });
+    const plans = preferLowAdjustment ? sortAdvancedPlansForRefine(planRows) : planRows;
+    const bestAdjustmentCount = bestAdjustmentCountForPlans(plans);
 
     const primaryFood = profilesForRow[0]?.food ?? row?.food ?? null;
     const primaryTotals = profilesForRow[0]?.totals ?? baseTotals;
@@ -835,6 +903,7 @@ export function applyAdvancedMode(results, options = {}) {
       food: primaryFood,
       meetsTargets: true,
       plans,
+      ...(Number.isFinite(bestAdjustmentCount) ? { bestAdjustmentCount } : {}),
       advanced: {
         enabledProfileCount: activeScoringProfileCount,
         baseTotals,
@@ -848,7 +917,8 @@ export function applyAdvancedMode(results, options = {}) {
     };
   });
 
-  const ranked = evaluated.sort(compareAdvancedRows);
+  const compareRows = preferLowAdjustment ? compareAdvancedRowsForRefine : compareAdvancedRows;
+  const ranked = evaluated.sort(compareRows);
 
   const groupedByBreakpointPattern = new Map();
   for (const row of ranked) {
@@ -860,9 +930,13 @@ export function applyAdvancedMode(results, options = {}) {
   }
 
   const groupedRows = Array.from(groupedByBreakpointPattern.values())
-    .map((groupRows) => buildAdvancedRowFromPatternGroup(groupRows, activeScoringProfileCount, variantLimit))
+    .map((groupRows) =>
+      buildAdvancedRowFromPatternGroup(groupRows, activeScoringProfileCount, variantLimit, {
+        preferLowAdjustment,
+      }),
+    )
     .filter((row) => !!row)
-    .sort(compareAdvancedRows);
+    .sort(compareRows);
 
   const displayLimit = Math.max(
     1,

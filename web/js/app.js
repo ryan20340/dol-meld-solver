@@ -17,9 +17,10 @@ import { solveByMode } from "./solver/solve-dispatch.js";
 import {
   applyAdvancedMode,
   buildAdvancedSummaryForTotals,
-  compareAdvancedSummaries,
+  compareAdvancedBreakpointSummaries,
   evaluateSavedPlanBreakpointCheck,
   normalizeSavedPlanBreakpointFoodDraftEntry,
+  savedPlanTotalsWithoutFood,
   selectActiveAdvancedProfiles,
 } from "./solver/advanced-postprocess.js";
 import { isAdvancedSolverMode, SOLVER_MODES } from "./solver/solver-modes.js";
@@ -1213,10 +1214,16 @@ function annotateResultsWithRefineDiff(results, baselinePlan) {
   const rows = Array.isArray(results) ? results : [];
   return rows.map((row) => {
     const plans = Array.isArray(row?.plans) ? row.plans : [];
-    const plansWithDiff = plans.map((plan) => ({
-      ...plan,
-      adjustmentDiff: buildAdjustmentDiffForPlan(baselinePlan, plan),
-    }));
+    const plansWithDiff = plans
+      .map((plan) => ({
+        ...plan,
+        adjustmentDiff: buildAdjustmentDiffForPlan(baselinePlan, plan),
+      }))
+      .sort((left, right) => {
+        const leftCount = normalizeNonNegativeInteger(left?.adjustmentDiff?.count, 0);
+        const rightCount = normalizeNonNegativeInteger(right?.adjustmentDiff?.count, 0);
+        return leftCount - rightCount;
+      });
     const bestAdjustmentCount = plansWithDiff.reduce((minValue, plan) => {
       const count = normalizeNonNegativeInteger(plan?.adjustmentDiff?.count, 0);
       return Math.min(minValue, count);
@@ -1243,17 +1250,23 @@ function rankRefineResults(rows, options) {
 
   if (objective === REFINE_OBJECTIVES.HIT_NEW_TARGETS) {
     if (useAdvancedScoring && baselineAdvancedSummary) {
-      filtered = source.filter((row) => compareAdvancedSummaries(baselineAdvancedSummary, row?.advanced) > 0);
+      filtered = source.filter((row) => compareAdvancedBreakpointSummaries(baselineAdvancedSummary, row?.advanced) > 0);
     } else {
       filtered = source.filter((row) => row?.meetsTargets);
     }
   } else if (useAdvancedScoring && baselineAdvancedSummary) {
-    filtered = source.filter((row) => compareAdvancedSummaries(baselineAdvancedSummary, row?.advanced) > 0);
+    filtered = source.filter((row) => compareAdvancedBreakpointSummaries(baselineAdvancedSummary, row?.advanced) > 0);
   } else if (Number.isFinite(baselineScore)) {
     filtered = source.filter((row) => Number(row?.score) > baselineScore);
   }
 
-  return [...filtered].sort((left, right) => {
+  const ranked = [...filtered].sort((left, right) => {
+    if (useAdvancedScoring) {
+      const advancedDiff = compareAdvancedBreakpointSummaries(left?.advanced, right?.advanced);
+      if (advancedDiff !== 0) {
+        return advancedDiff;
+      }
+    }
     const scoreDiff = (Number(right?.score) || 0) - (Number(left?.score) || 0);
     if (scoreDiff !== 0) {
       return scoreDiff;
@@ -1274,6 +1287,8 @@ function rankRefineResults(rows, options) {
       normalizeNonNegativeInteger(right?.totalGp, 0);
     return rightStatTotal - leftStatTotal;
   });
+  const limit = normalizeNonNegativeInteger(options?.limit, 0);
+  return limit > 0 ? ranked.slice(0, limit) : ranked;
 }
 
 function savedPlansGradeValueIndex() {
@@ -1855,7 +1870,7 @@ async function refineSavedPlan(planId, options = {}) {
 
   syncSelectedGearToSavedPlan(savedPlan);
 
-  const baselineTotals = savedPlanTotals(savedPlan);
+  const baselineTotals = refineWithAdvanced ? savedPlanTotalsWithoutFood(savedPlan) : savedPlanTotals(savedPlan);
   const baselineScore = refineWithAdvanced ? NaN : Number(scoreCandidate(baselineTotals, targetOverride));
   const baselineAdvancedSummary = refineWithAdvanced
     ? buildAdvancedSummaryForTotals(baselineTotals, {
@@ -1871,6 +1886,14 @@ async function refineSavedPlan(planId, options = {}) {
     forceLegacyMode: !refineWithAdvanced,
     skipDiversify: true,
     statusContext,
+    advancedDisplayLimit: refineWithAdvanced ? ADVANCED_FRONTIER_HARD_CAP : undefined,
+    advancedDecoratePlan: refineWithAdvanced
+      ? (plan) => ({
+          ...plan,
+          adjustmentDiff: buildAdjustmentDiffForPlan(savedPlan, plan),
+        })
+      : null,
+    advancedPreferLowAdjustment: refineWithAdvanced,
     postProcessResults: (rows) => {
       const rowsWithTargets = (Array.isArray(rows) ? rows : []).map((row) => ({
         ...row,
@@ -1886,6 +1909,9 @@ async function refineSavedPlan(planId, options = {}) {
         baselineScore,
         useAdvancedScoring: refineWithAdvanced,
         baselineAdvancedSummary,
+        limit: refineWithAdvanced
+          ? normalizeMaxResultsForSolveMode(state?.solve?.maxResults, SOLVER_MODES.ADVANCED)
+          : 0,
       });
     },
   });
@@ -2476,12 +2502,18 @@ async function runSolver(options = {}) {
   state.selectedGearRows = solveOutput.selectedGearRows;
   state.solveDiagnostics = solveOutput.diagnostics;
   const baseResults = Array.isArray(solveOutput?.results) ? solveOutput.results : [];
+  const advancedDisplayLimit =
+    options?.advancedDisplayLimit == null
+      ? normalizeMaxResultsForSolveMode(state?.solve?.maxResults, SOLVER_MODES.ADVANCED)
+      : Math.max(1, normalizeNonNegativeInteger(options.advancedDisplayLimit, ADVANCED_MODE_MAX_RESULTS_LIMIT));
   const rawResultsWithFood = advancedActive
     ? applyAdvancedMode(baseResults, {
         advancedProfiles: state?.advanced?.profiles,
         foodRows: getFoodRows(),
-        displayLimit: normalizeMaxResultsForSolveMode(state?.solve?.maxResults, SOLVER_MODES.ADVANCED),
+        displayLimit: advancedDisplayLimit,
         variantLimit: ADVANCED_MODE_VARIANT_LIMIT,
+        decoratePlan: options?.advancedDecoratePlan,
+        preferLowAdjustment: options?.advancedPreferLowAdjustment === true,
       })
     : applyFixedFood(baseResults);
   const maybePostProcessed =
