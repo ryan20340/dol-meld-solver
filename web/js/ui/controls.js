@@ -15,6 +15,69 @@ const INITIAL_DROPDOWN_PRELOAD_COUNT = 12;
 const NORMAL_MODE_MAX_RESULTS_LIMIT = 25;
 const ADVANCED_MODE_MAX_RESULTS_LIMIT = 10;
 
+const GRADE_ROMAN = Object.freeze(["", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"]);
+
+// Slot tiers the player can restrict grades for, matched to the meld-dot colors
+// used throughout the results UI.
+const GRADE_TIERS = Object.freeze([
+  { key: "guaranteed", label: "Guaranteed", dotClass: "meld-dot guaranteed" },
+  { key: "overmeldFirst", label: "First Overmeld", dotClass: "meld-dot overmeld-first" },
+  { key: "overmeld", label: "Overmelds", dotClass: "meld-dot overmeld" },
+]);
+
+function gradeToRoman(grade) {
+  const value = Number(grade) || 0;
+  return GRADE_ROMAN[value] ?? String(value);
+}
+
+// Grades that are actually legal in each slot tier, ascending. Guaranteed slots
+// accept any grade; overmeld slots only accept grades whose materia is meldable
+// at that overmeld index (rate > 0) — e.g. the top grade of a tier can't be
+// overmelded, so it never appears under First Overmeld / Overmelds. Mirrors the
+// solver's isMateriaLegalForSlot so the chips match what the solver would allow.
+function getAvailableGradesByTier(state) {
+  const rows = Array.isArray(state?.data?.materia?.rows) ? state.data.materia.rows : [];
+  const guaranteed = new Set();
+  const overmeldFirst = new Set();
+  const overmeld = new Set();
+  for (const row of rows) {
+    const grade = Number(row?.grade);
+    if (!Number.isFinite(grade) || grade <= 0) {
+      continue;
+    }
+    const safeGrade = Math.floor(grade);
+    guaranteed.add(safeGrade);
+    const allowedSlots = Array.isArray(row?.overmeld_allowed_slots) ? row.overmeld_allowed_slots : [];
+    const rates = Array.isArray(row?.overmeld_rates_nq) ? row.overmeld_rates_nq : [];
+    for (const slotRaw of allowedSlots) {
+      const overmeldIndex = Math.floor(Number(slotRaw));
+      if (!Number.isFinite(overmeldIndex) || overmeldIndex < 0) {
+        continue;
+      }
+      const rate = Number(rates[overmeldIndex] ?? 0);
+      if (!Number.isFinite(rate) || rate <= 0) {
+        continue;
+      }
+      if (overmeldIndex === 0) {
+        overmeldFirst.add(safeGrade);
+      } else {
+        overmeld.add(safeGrade);
+      }
+    }
+  }
+  const sortAsc = (set) => [...set].sort((a, b) => a - b);
+  return {
+    guaranteed: sortAsc(guaranteed),
+    overmeldFirst: sortAsc(overmeldFirst),
+    overmeld: sortAsc(overmeld),
+  };
+}
+
+function disallowedGradesForTier(state, tierKey) {
+  const list = state?.solve?.disallowedGradesByTier?.[tierKey];
+  return Array.isArray(list) ? list : [];
+}
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -433,6 +496,60 @@ function wireFoodHandlers(container, handlers) {
   }
 }
 
+function buildGradeEditorHtml(state) {
+  const gradesByTier = getAvailableGradesByTier(state);
+  const hasAnyGrades = GRADE_TIERS.some((tier) => (gradesByTier[tier.key] ?? []).length > 0);
+  if (!hasAnyGrades) {
+    return "";
+  }
+  const tiersHtml = GRADE_TIERS.map((tier) => {
+    const disallowed = disallowedGradesForTier(state, tier.key);
+    const grades = gradesByTier[tier.key] ?? [];
+    const chips = grades
+      .map((grade) => {
+        const allowed = !disallowed.includes(grade);
+        return `
+          <button
+            type="button"
+            class="grade-chip${allowed ? " grade-chip-active" : ""}"
+            data-grade-tier="${escapeHtml(tier.key)}"
+            data-grade-value="${grade}"
+            aria-pressed="${allowed ? "true" : "false"}"
+            title="${allowed ? "Allowed" : "Disallowed"} — Grade ${escapeHtml(gradeToRoman(grade))}"
+          >${escapeHtml(gradeToRoman(grade))}</button>`;
+      })
+      .join("");
+    return `
+      <div class="grade-tier">
+        <div class="grade-tier-head">
+          <span class="${escapeHtml(tier.dotClass)}"></span>
+          <span>${escapeHtml(tier.label)}</span>
+        </div>
+        <div class="grade-chip-row">${chips}</div>
+      </div>`;
+  }).join("");
+
+  return `
+    <section class="subpanel" id="grade-editor">
+      <h3>Materia Grades</h3>
+      <p class="muted">Click a grade to allow/disallow it per slot tier. Disabled grades are excluded from every solve (and refine).</p>
+      ${tiersHtml}
+    </section>
+  `;
+}
+
+function wireGradeHandlers(container, handlers) {
+  container.querySelectorAll("[data-grade-tier][data-grade-value]").forEach((chip) => {
+    chip.addEventListener("click", (event) => {
+      const tier = event.currentTarget.getAttribute("data-grade-tier");
+      const grade = normalizeNonNegativeInteger(event.currentTarget.getAttribute("data-grade-value"), 0);
+      // aria-pressed reflects current allowed state; toggling flips it.
+      const currentlyAllowed = event.currentTarget.getAttribute("aria-pressed") === "true";
+      handlers.onGradeTierToggle?.({ tier, grade, allowed: !currentlyAllowed });
+    });
+  });
+}
+
 function wireSolveHandlers(container, handlers) {
   const solveButton = container.querySelector("#solve-run");
   if (solveButton) {
@@ -577,10 +694,13 @@ export function renderControlsPanel(container, state, handlers = {}) {
         <p class="muted">Visited branches: ${visitedBranches} | Early-stop: ${terminatedEarly} | Time-stop: ${terminatedByTime}</p>
         <p class="muted">Prunes: target ${targetPrunes}, score ${scorePrunes} | Solve time: ${elapsedMs}ms</p>
       </section>
+
+      ${buildGradeEditorHtml(state)}
     </div>
   `;
 
   wireTargetHandlers(container, handlers);
   wireFoodHandlers(container, handlers);
   wireSolveHandlers(container, handlers);
+  wireGradeHandlers(container, handlers);
 }

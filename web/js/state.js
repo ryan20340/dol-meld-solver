@@ -28,6 +28,14 @@ export function createInitialState() {
       timeBudgetMs: 10000,
       maxBranches: 5000000,
       useBruteForce: false,
+      // Grades the player has disallowed per materia-slot tier. Empty = every
+      // grade allowed (default). Tiers mirror the meld-dot colors: guaranteed
+      // (green), overmeldFirst (yellow), overmeld (red). Applies to all solves.
+      disallowedGradesByTier: {
+        guaranteed: [],
+        overmeldFirst: [],
+        overmeld: [],
+      },
     },
     advanced: buildDefaultAdvancedState(),
     solveDiagnostics: null,

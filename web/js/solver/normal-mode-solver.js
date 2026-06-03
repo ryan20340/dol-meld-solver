@@ -29,6 +29,8 @@ export function buildNormalSolveInput(state, options = {}) {
     refineBaseline: options?.refineBaseline,
     // Per-piece Block constraints (caps usable materia slots). Refine only.
     slotConstraints: options?.slotConstraints,
+    // Player's per-tier disallowed materia grades. Applies to every solve.
+    disallowedGradesByTier: state?.solve?.disallowedGradesByTier ?? null,
   };
 }
 

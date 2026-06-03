@@ -71,6 +71,8 @@ const REFINE_OBJECTIVES = Object.freeze({
 const CONTROLS_COLLAPSE_STORAGE_KEY = "dol-meld-solver-controls-collapsed";
 const ADVANCED_CONFIG_STORAGE_KEY = "dol-meld-solver-advanced-config-v1";
 const GEARSET_STORAGE_KEY = "dol-meld-solver-gearset-v1";
+const GRADE_FILTER_STORAGE_KEY = "dol-meld-solver-grade-filter-v1";
+const GRADE_TIER_KEYS = Object.freeze(["guaranteed", "overmeldFirst", "overmeld"]);
 const ADVANCED_PRESET_75_URL = new URL("./presets/current-advanced-preset.json", import.meta.url);
 const ADVANCED_FRONTIER_GROWTH_FACTOR = 2;
 const ADVANCED_FRONTIER_HARD_CAP = 96000;
@@ -408,6 +410,70 @@ function persistAdvancedConfig() {
     state.advanced,
     "Unable to persist advanced configuration.",
   );
+}
+
+function emptyDisallowedGradesByTier() {
+  return { guaranteed: [], overmeldFirst: [], overmeld: [] };
+}
+
+function normalizeDisallowedGradesByTier(raw) {
+  const result = emptyDisallowedGradesByTier();
+  if (!raw || typeof raw !== "object") {
+    return result;
+  }
+  for (const tier of GRADE_TIER_KEYS) {
+    const list = Array.isArray(raw[tier]) ? raw[tier] : [];
+    const grades = new Set();
+    for (const value of list) {
+      const grade = normalizeNonNegativeInteger(value, 0);
+      if (grade > 0) {
+        grades.add(grade);
+      }
+    }
+    result[tier] = [...grades].sort((a, b) => a - b);
+  }
+  return result;
+}
+
+function ensureDisallowedGradesByTier() {
+  state.solve.disallowedGradesByTier = normalizeDisallowedGradesByTier(state.solve.disallowedGradesByTier);
+  return state.solve.disallowedGradesByTier;
+}
+
+function persistGradeFilter() {
+  writeLocalStorageJson(
+    GRADE_FILTER_STORAGE_KEY,
+    ensureDisallowedGradesByTier(),
+    "Unable to persist materia grade filter.",
+  );
+}
+
+function loadGradeFilter() {
+  const parsed = readLocalStorageJson(
+    GRADE_FILTER_STORAGE_KEY,
+    "Unable to read materia grade filter; using defaults.",
+  );
+  state.solve.disallowedGradesByTier = normalizeDisallowedGradesByTier(parsed);
+}
+
+function toggleSolveGradeTier(tier, grade, allowed) {
+  if (!GRADE_TIER_KEYS.includes(tier)) {
+    return;
+  }
+  const safeGrade = normalizeNonNegativeInteger(grade, 0);
+  if (safeGrade <= 0) {
+    return;
+  }
+  const disallowed = ensureDisallowedGradesByTier();
+  const set = new Set(disallowed[tier]);
+  if (allowed) {
+    set.delete(safeGrade);
+  } else {
+    set.add(safeGrade);
+  }
+  disallowed[tier] = [...set].sort((a, b) => a - b);
+  persistGradeFilter();
+  markSolveDirty();
 }
 
 function loadAdvancedConfig() {
@@ -2998,6 +3064,9 @@ function render() {
       state.solve.useBruteForce = !!enabled;
       markSolveDirty();
     },
+    onGradeTierToggle: ({ tier, grade, allowed }) => {
+      toggleSolveGradeTier(tier, grade, allowed);
+    },
     onSolveNow: () => {
       if (!state?.advanced?.enabled) {
         applyDraftTargetsToSolveTargets();
@@ -3168,6 +3237,7 @@ async function init() {
     loadedSummary = summarizeProcessedData(state.data);
     loadAdvancedConfig();
     hydrateAdvancedConfigAgainstData();
+    loadGradeFilter();
     applySolveDefaultsForMode(resolveSolveMode());
     const persistedGearSelection = loadGearSelection();
     if (persistedGearSelection?.useHq != null) {

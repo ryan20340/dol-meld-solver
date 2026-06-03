@@ -100,12 +100,36 @@ function isMateriaLegalForSlot(materia, slot) {
   return Number.isFinite(rateAtIndex) && rateAtIndex > 0;
 }
 
-function buildLegalMateriaBySlot(slots, materiaRows) {
+// Slot tier matches the meld-dot colors the player configures grades against.
+function slotTier(slot) {
+  if (!slot?.isOvermeld) {
+    return "guaranteed";
+  }
+  return slot?.overmeldIndex === 0 ? "overmeldFirst" : "overmeld";
+}
+
+// A grade is allowed in a slot unless the player disallowed it for that tier.
+function isGradeAllowedForSlot(grade, slot, disallowedGradesByTier) {
+  if (!disallowedGradesByTier) {
+    return true;
+  }
+  const disallowed = disallowedGradesByTier[slotTier(slot)];
+  if (!Array.isArray(disallowed) || disallowed.length === 0) {
+    return true;
+  }
+  return !disallowed.includes(normalizePositiveInteger(grade, 0));
+}
+
+function buildLegalMateriaBySlot(slots, materiaRows, disallowedGradesByTier = null) {
   const rowsBySlotIndex = new Map();
 
   for (const slot of slots) {
     const legalRows = materiaRows
-      .filter((row) => isMateriaLegalForSlot(row, slot))
+      .filter(
+        (row) =>
+          isMateriaLegalForSlot(row, slot) &&
+          isGradeAllowedForSlot(row?.grade, slot, disallowedGradesByTier),
+      )
       .sort((left, right) => {
         const gradeDiff =
           normalizePositiveInteger(right?.grade, 0) - normalizePositiveInteger(left?.grade, 0);
@@ -483,7 +507,7 @@ export function buildCandidatesForPiece(piece, options) {
   }
 
   const pieceCaps = getPieceCaps(piece, { useGearHq });
-  const legalMateriaBySlot = buildLegalMateriaBySlot(slots, materiaRows);
+  const legalMateriaBySlot = buildLegalMateriaBySlot(slots, materiaRows, options?.disallowedGradesByTier);
   // Always prune dominated partial layouts (lossless for the stat frontier).
   // Both the fast and the thorough ("brute force") search use this — the modes
   // differ only in their branch/time budgets, not in pruning correctness.

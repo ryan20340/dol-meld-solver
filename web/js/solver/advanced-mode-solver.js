@@ -17,6 +17,8 @@ export function buildAdvancedSolveInput(state, options = {}) {
     baseGathererGp: options?.baseGathererGp,
     refineBaseline: options?.refineBaseline,
     slotConstraints: options?.slotConstraints,
+    // Player's per-tier disallowed materia grades. Applies to every solve.
+    disallowedGradesByTier: state?.solve?.disallowedGradesByTier ?? null,
   };
 }
 

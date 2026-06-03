@@ -710,6 +710,8 @@ export function solveLegalityOnly(input, options = {}) {
       maxCandidatesPerPiece,
       useGearHq,
       maxSlotsOverride: availableSlotsByPieceIndex ? availableSlotsByPieceIndex[pieceIndex] : null,
+      // Player's per-tier grade restrictions (green/yellow/red slots).
+      disallowedGradesByTier: input?.disallowedGradesByTier ?? null,
     }),
   }));
 
