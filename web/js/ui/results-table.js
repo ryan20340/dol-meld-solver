@@ -29,6 +29,10 @@ const SLOT_DISPLAY = Object.freeze({
   wrists: "Wrists",
   ring: "Ring",
 });
+const REFINE_OBJECTIVES = Object.freeze({
+  IMPROVE_SCORE: "improve_score",
+  HIT_NEW_TARGETS: "hit_new_targets",
+});
 const LEFT_SLOT_ORDER = ["main_hand", "head", "body", "hands", "legs", "feet"];
 const LEFT_SLOT_SET = new Set(LEFT_SLOT_ORDER);
 
@@ -592,6 +596,15 @@ function buildMeldLine(meld, options = {}) {
   const applied = Number(meld?.appliedValue) || 0;
   const raw = Number(meld?.rawValue) || 0;
   const grade = Number(meld?.grade) || 0;
+  const pieceIndex = normalizeNonNegativeInteger(options?.pieceIndex);
+  const meldIndex = normalizeNonNegativeInteger(options?.meldIndex);
+  const slotIndex = normalizeNonNegativeInteger(meld?.slotIndex, meldIndex);
+  const changedMeldKeySet = options?.changedMeldKeySet instanceof Set ? options.changedMeldKeySet : null;
+  const isChangedMeld =
+    Boolean(options?.highlightDiff) &&
+    changedMeldKeySet instanceof Set &&
+    changedMeldKeySet.has(`${pieceIndex}:${slotIndex}`);
+  const meldLineClass = isChangedMeld ? "meld-line meld-line-changed" : "meld-line";
   if (options?.isEditing) {
     const stat = String(meld?.stat ?? "gathering");
     const statOptions = buildStatOptionsHtml(stat);
@@ -603,14 +616,12 @@ function buildMeldLine(meld, options = {}) {
       options?.gradeValueIndexByStat,
       raw,
     );
-    const pieceIndex = normalizeNonNegativeInteger(options?.pieceIndex);
-    const meldIndex = normalizeNonNegativeInteger(options?.meldIndex);
     const slotLabel = `Slot ${normalizeNonNegativeInteger(meld?.slotIndex) + 1}`;
     const capMeta = raw > applied
       ? `Applied +${applied} (capped, raw +${raw})`
       : `Applied +${applied}`;
     return `
-      <li class="meld-line meld-line-editable">
+      <li class="${meldLineClass} meld-line-editable">
         <span class="${escapeHtml(dotClass)}"></span>
         <span class="saved-plan-inline-slot muted">${escapeHtml(slotLabel)}</span>
         <select data-action="saved-plan-edit-stat" data-plan-id="${escapeHtml(options?.planId)}" data-piece-index="${pieceIndex}" data-meld-index="${meldIndex}">
@@ -625,7 +636,7 @@ function buildMeldLine(meld, options = {}) {
   }
   const cappedNote = raw !== applied ? ` <span class="muted">(raw +${raw})</span>` : "";
   return `
-    <li class="meld-line">
+    <li class="${meldLineClass}">
       <span class="${escapeHtml(dotClass)}"></span>
       <span>${escapeHtml(statLabel)} +${applied} (${escapeHtml(gradeToRoman(grade))})${cappedNote}</span>
     </li>
@@ -695,14 +706,7 @@ function buildPieceLayout(piece, options = {}) {
     useHqVariant: options?.gearUseHq === true && pieceCanBeHq,
   });
   const melds = Array.isArray(piece?.melds) ? piece.melds : [];
-  const changedPieceIndexSet = options?.changedPieceIndexSet instanceof Set
-    ? options.changedPieceIndexSet
-    : null;
-  const isChangedPiece =
-    Boolean(options?.highlightDiff) &&
-    changedPieceIndexSet instanceof Set &&
-    changedPieceIndexSet.has(normalizeNonNegativeInteger(options?.pieceIndex));
-  const pieceLayoutClass = isChangedPiece ? "piece-layout piece-layout-changed" : "piece-layout";
+  const pieceLayoutClass = "piece-layout";
 
   if (melds.length === 0) {
     const maxMateriaSlots = Number(piece?.maxMateriaSlots) || 0;
@@ -995,6 +999,87 @@ function buildSavedPlanBreakpointCheckViewer(savedPlanId, state) {
   `;
 }
 
+function buildSavedPlanRefinePanel(savedPlanId, state, baselineTotals) {
+  const dialog = state?.savedPlansUi?.refineDialog;
+  if (!dialog || String(dialog?.planId ?? "") !== savedPlanId) {
+    return "";
+  }
+
+  const objective = dialog?.objective === REFINE_OBJECTIVES.HIT_NEW_TARGETS
+    ? REFINE_OBJECTIVES.HIT_NEW_TARGETS
+    : REFINE_OBJECTIVES.IMPROVE_SCORE;
+  const advancedEnabled = state?.advanced?.enabled === true;
+  const showTargetInputs = objective === REFINE_OBJECTIVES.HIT_NEW_TARGETS && !advancedEnabled;
+  const targets = {
+    gathering: normalizeNonNegativeInteger(dialog?.targets?.gathering, baselineTotals.gathering),
+    perception: normalizeNonNegativeInteger(dialog?.targets?.perception, baselineTotals.perception),
+    gp: normalizeNonNegativeInteger(dialog?.targets?.gp, baselineTotals.gp),
+  };
+  const improveChecked = objective === REFINE_OBJECTIVES.IMPROVE_SCORE ? "checked" : "";
+  const targetsChecked = objective === REFINE_OBJECTIVES.HIT_NEW_TARGETS ? "checked" : "";
+  const objectiveNote = objective === REFINE_OBJECTIVES.HIT_NEW_TARGETS && advancedEnabled
+    ? '<p class="muted">Advanced refine uses the enabled breakpoint profiles as targets.</p>'
+    : "";
+  const targetInputsHtml = showTargetInputs
+    ? `
+      <div class="saved-plan-refine-targets">
+        ${STAT_KEYS.map((statKey) => `
+          <label>
+            <span>${STAT_DISPLAY[statKey]}</span>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              inputmode="numeric"
+              data-action="saved-plan-refine-target"
+              data-plan-id="${escapeHtml(savedPlanId)}"
+              data-refine-target="${escapeHtml(statKey)}"
+              value="${escapeHtml(targets[statKey])}"
+            >
+          </label>
+        `).join("")}
+      </div>
+    `
+    : "";
+
+  return `
+    <div class="saved-plan-refine-panel">
+      <h5>Refine Plan</h5>
+      <p class="muted">Choose how refined results should be filtered and ranked.</p>
+      <div class="saved-plan-refine-options">
+        <label class="checkbox-row">
+          <input
+            type="radio"
+            name="saved-plan-refine-objective-${escapeHtml(savedPlanId)}"
+            data-action="saved-plan-refine-objective"
+            data-plan-id="${escapeHtml(savedPlanId)}"
+            value="${REFINE_OBJECTIVES.IMPROVE_SCORE}"
+            ${improveChecked}
+          >
+          <span>Improve current plan score</span>
+        </label>
+        <label class="checkbox-row">
+          <input
+            type="radio"
+            name="saved-plan-refine-objective-${escapeHtml(savedPlanId)}"
+            data-action="saved-plan-refine-objective"
+            data-plan-id="${escapeHtml(savedPlanId)}"
+            value="${REFINE_OBJECTIVES.HIT_NEW_TARGETS}"
+            ${targetsChecked}
+          >
+          <span>Hit new targets</span>
+        </label>
+      </div>
+      ${objectiveNote}
+      ${targetInputsHtml}
+      <div class="saved-plan-refine-actions">
+        <button type="button" data-action="saved-plan-refine-submit" data-plan-id="${escapeHtml(savedPlanId)}">Run Refine</button>
+        <button type="button" data-action="saved-plan-refine-cancel" data-plan-id="${escapeHtml(savedPlanId)}">Cancel</button>
+      </div>
+    </div>
+  `;
+}
+
 function buildSavedPlanCardHtml(savedPlan, state, iconContext = {}) {
   const savedPlanId = String(savedPlan?.id ?? "");
   const isViewing = state?.savedPlansUi?.viewPlanId === savedPlanId;
@@ -1050,6 +1135,7 @@ function buildSavedPlanCardHtml(savedPlan, state, iconContext = {}) {
 
   const breakpointCheckHtml =
     advancedEnabled && isCheckingBreakpoints ? buildSavedPlanBreakpointCheckViewer(savedPlanId, state) : "";
+  const refinePanelHtml = buildSavedPlanRefinePanel(savedPlanId, state, totals);
 
   const viewHtml = isViewing
     ? `
@@ -1098,6 +1184,7 @@ function buildSavedPlanCardHtml(savedPlan, state, iconContext = {}) {
       </div>
       <p class="muted item-with-icon">Food: ${previewFoodIconHtml}<span>${escapeHtml(foodText)}</span></p>
       ${actionBar}
+      ${refinePanelHtml}
       ${breakpointCheckHtml}
       ${viewHtml}
     </div>
@@ -1160,11 +1247,13 @@ function buildPlansRows(row, resultIndex, state, iconContext = {}) {
   return plans.map((plan, planIndex) => {
     const planDiffKey = `${resultIndex}:${planIndex}`;
     const diffEnabled = Boolean(state?.resultsUi?.diffEnabledByPlanKey?.[planDiffKey]);
-    const changedPieceIndices = Array.isArray(plan?.adjustmentDiff?.changedPieceIndices)
-      ? plan.adjustmentDiff.changedPieceIndices
+    const changedMeldKeys = Array.isArray(plan?.adjustmentDiff?.changedMeldKeys)
+      ? plan.adjustmentDiff.changedMeldKeys
       : [];
-    const changedPieceIndexSet = new Set(changedPieceIndices.map((value) => normalizeNonNegativeInteger(value)));
+    const changedMeldKeySet = new Set(changedMeldKeys.map((value) => String(value ?? "")));
     const canToggleDiff = Boolean(plan?.adjustmentDiff);
+    const detailsOpen =
+      diffEnabled || Boolean(state?.resultsUi?.openPlanDetailsByPlanKey?.[planDiffKey]);
     const label = `Variant ${planIndex + 1} (${variantTotalsLabel(plan, row)} | ${variantFoodLabel(plan?.food ?? row?.food)})`;
     const diffButton = canToggleDiff
       ? `<button type="button" data-action="result-plan-toggle-diff" data-result-index="${resultIndex}" data-plan-index="${planIndex}">${diffEnabled ? "Hide Diff Highlight" : "Show Diff Highlight"}</button>`
@@ -1175,7 +1264,12 @@ function buildPlansRows(row, resultIndex, state, iconContext = {}) {
         : '<p class="muted adjustment-summary">Diff hidden. Enable highlight to view changes.</p>')
       : buildAdjustmentDiffHtml(plan?.adjustmentDiff);
     return `
-      <details class="plan-details">
+      <details
+        class="plan-details"
+        data-result-index="${resultIndex}"
+        data-plan-index="${planIndex}"
+        ${detailsOpen ? "open" : ""}
+      >
         <summary>${label}</summary>
         <div class="plan-variant-actions">
           <button type="button" data-action="result-plan-save" data-result-index="${resultIndex}" data-plan-index="${planIndex}">Save Plan</button>
@@ -1184,7 +1278,7 @@ function buildPlansRows(row, resultIndex, state, iconContext = {}) {
         ${diffSection}
         ${buildPlanLayoutHtml(plan, plan?.food ?? row.food, {
           highlightDiff: diffEnabled,
-          changedPieceIndexSet,
+          changedMeldKeySet,
           advancedProfiles: Array.isArray(plan?.advanced?.profiles) ? plan.advanced.profiles : [],
           gearIconIdByItemId: iconContext?.gearIconIdByItemId,
           foodIconIdByItemId: iconContext?.foodIconIdByItemId,
@@ -1206,6 +1300,8 @@ function wireEvents(resultsPanelElement, handlers) {
     "saved-plan-delete": handlers?.onDeleteSavedPlan,
     "saved-plan-export": handlers?.onExportSavedPlan,
     "saved-plan-refine": handlers?.onRefineSavedPlan,
+    "saved-plan-refine-submit": handlers?.onSubmitSavedPlanRefine,
+    "saved-plan-refine-cancel": handlers?.onCancelSavedPlanRefine,
     "saved-plan-check-breakpoints": handlers?.onToggleSavedPlanBreakpointCheck,
     "saved-plan-save-edits": handlers?.onSaveSavedPlanEdits,
     "saved-plan-cancel-edits": handlers?.onCancelSavedPlanEdits,
@@ -1246,6 +1342,16 @@ function wireEvents(resultsPanelElement, handlers) {
         return;
       }
       handler(payload);
+    });
+  });
+
+  resultsPanelElement.querySelectorAll("details.plan-details").forEach((details) => {
+    details.addEventListener("toggle", (event) => {
+      handlers?.onResultPlanDetailsToggle?.({
+        resultIndex: normalizeNonNegativeInteger(event.currentTarget.getAttribute("data-result-index")),
+        planIndex: normalizeNonNegativeInteger(event.currentTarget.getAttribute("data-plan-index")),
+        open: Boolean(event.currentTarget.open),
+      });
     });
   });
 
@@ -1331,6 +1437,29 @@ function wireEvents(resultsPanelElement, handlers) {
         meldIndex: 0,
         field: "foodUseHq",
         value: Boolean(event.currentTarget.checked),
+      });
+    });
+  });
+
+  resultsPanelElement.querySelectorAll('input[data-action="saved-plan-refine-objective"]').forEach((input) => {
+    input.addEventListener("change", (event) => {
+      if (!event.currentTarget.checked) {
+        return;
+      }
+      handlers?.onSavedPlanRefineDraftChange?.({
+        planId: event.currentTarget.getAttribute("data-plan-id"),
+        field: "objective",
+        value: event.currentTarget.value,
+      });
+    });
+  });
+
+  resultsPanelElement.querySelectorAll('input[data-action="saved-plan-refine-target"]').forEach((input) => {
+    input.addEventListener("input", (event) => {
+      handlers?.onSavedPlanRefineDraftChange?.({
+        planId: event.currentTarget.getAttribute("data-plan-id"),
+        field: event.currentTarget.getAttribute("data-refine-target"),
+        value: event.currentTarget.value,
       });
     });
   });

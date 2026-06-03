@@ -350,6 +350,12 @@ function savedPlanTotals(savedPlan) {
   });
 }
 
+function normalizeRefineObjective(value) {
+  return value === REFINE_OBJECTIVES.HIT_NEW_TARGETS
+    ? REFINE_OBJECTIVES.HIT_NEW_TARGETS
+    : REFINE_OBJECTIVES.IMPROVE_SCORE;
+}
+
 function nowMs() {
   if (typeof performance !== "undefined" && typeof performance.now === "function") {
     return performance.now();
@@ -1116,77 +1122,6 @@ function syncSelectedGearToSavedPlan(savedPlan) {
   persistGearSelection();
 }
 
-function promptRefineObjective() {
-  if (typeof window === "undefined" || typeof window.prompt !== "function") {
-    return REFINE_OBJECTIVES.IMPROVE_SCORE;
-  }
-
-  try {
-    const message = [
-      "Refine objective:",
-      "1 = Improve current plan score",
-      "2 = Hit new targets",
-    ].join("\n");
-    const rawChoice = window.prompt(message, "1");
-    if (rawChoice == null) {
-      return null;
-    }
-    const normalized = String(rawChoice).trim().toLowerCase();
-    if (normalized === "2" || normalized === "hit" || normalized === "targets") {
-      return REFINE_OBJECTIVES.HIT_NEW_TARGETS;
-    }
-    return REFINE_OBJECTIVES.IMPROVE_SCORE;
-  } catch (error) {
-    console.warn("Refine objective prompt unavailable; defaulting to score-improvement objective.", error);
-    return REFINE_OBJECTIVES.IMPROVE_SCORE;
-  }
-}
-
-function promptSingleTargetValue(label, fallbackValue) {
-  if (typeof window === "undefined" || typeof window.prompt !== "function") {
-    return normalizeNonNegativeInteger(fallbackValue, 0);
-  }
-
-  const defaultValue = String(normalizeNonNegativeInteger(fallbackValue, 0));
-  const raw = window.prompt(`Target ${label}`, defaultValue);
-  if (raw == null) {
-    return null;
-  }
-  const trimmed = String(raw).trim();
-  if (trimmed.length === 0) {
-    return normalizeNonNegativeInteger(fallbackValue, 0);
-  }
-  const parsed = Number(trimmed);
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    return Number.NaN;
-  }
-  return Math.floor(parsed);
-}
-
-function promptRefineTargets(savedPlan) {
-  const baseline = savedPlanTotals(savedPlan);
-  const currentTargets = summarizeTotals(state.targets);
-  const defaults = hasAnyTargets(currentTargets) ? currentTargets : baseline;
-  const gathering = promptSingleTargetValue("Gathering", defaults.gathering);
-  if (gathering == null) {
-    return null;
-  }
-  const perception = promptSingleTargetValue("Perception", defaults.perception);
-  if (perception == null) {
-    return null;
-  }
-  const gp = promptSingleTargetValue("GP", defaults.gp);
-  if (gp == null) {
-    return null;
-  }
-
-  const targets = { gathering, perception, gp };
-  if (!Number.isFinite(targets.gathering) || !Number.isFinite(targets.perception) || !Number.isFinite(targets.gp)) {
-    return Number.NaN;
-  }
-  return targets;
-}
-
 function normalizeMeldKey(meld) {
   return normalizeNonNegativeInteger(meld?.slotIndex, 0);
 }
@@ -1222,6 +1157,7 @@ function buildAdjustmentDiffForPlan(baselinePlan, candidatePlan) {
   const maxPieceCount = Math.max(baselinePieces.length, candidatePieces.length);
   const lines = [];
   const changedPieceIndices = new Set();
+  const changedMeldKeys = new Set();
 
   for (let pieceIndex = 0; pieceIndex < maxPieceCount; pieceIndex += 1) {
     const baselinePiece = baselinePieces[pieceIndex] ?? null;
@@ -1242,18 +1178,22 @@ function buildAdjustmentDiffForPlan(baselinePlan, candidatePlan) {
       const baselineMeld = baselineLookup.get(slotIndex);
       const candidateMeld = candidateLookup.get(slotIndex);
       const slotTag = `slot ${slotIndex + 1}`;
+      const meldKey = `${pieceIndex}:${slotIndex}`;
       if (!baselineMeld && candidateMeld) {
         changedPieceIndices.add(pieceIndex);
+        changedMeldKeys.add(meldKey);
         lines.push(`${pieceLabel} ${slotTag}: add ${describeMeldShort(candidateMeld)}`);
         continue;
       }
       if (baselineMeld && !candidateMeld) {
         changedPieceIndices.add(pieceIndex);
+        changedMeldKeys.add(meldKey);
         lines.push(`${pieceLabel} ${slotTag}: remove ${describeMeldShort(baselineMeld)}`);
         continue;
       }
       if (baselineMeld && candidateMeld && !meldEquivalent(baselineMeld, candidateMeld)) {
         changedPieceIndices.add(pieceIndex);
+        changedMeldKeys.add(meldKey);
         lines.push(
           `${pieceLabel} ${slotTag}: replace ${describeMeldShort(baselineMeld)} -> ${describeMeldShort(candidateMeld)}`,
         );
@@ -1265,6 +1205,7 @@ function buildAdjustmentDiffForPlan(baselinePlan, candidatePlan) {
     count: lines.length,
     lines,
     changedPieceIndices: Array.from(changedPieceIndices.values()).sort((a, b) => a - b),
+    changedMeldKeys: Array.from(changedMeldKeys.values()).sort(),
   };
 }
 
@@ -1301,7 +1242,11 @@ function rankRefineResults(rows, options) {
   let filtered = source;
 
   if (objective === REFINE_OBJECTIVES.HIT_NEW_TARGETS) {
-    filtered = source.filter((row) => row?.meetsTargets);
+    if (useAdvancedScoring && baselineAdvancedSummary) {
+      filtered = source.filter((row) => compareAdvancedSummaries(baselineAdvancedSummary, row?.advanced) > 0);
+    } else {
+      filtered = source.filter((row) => row?.meetsTargets);
+    }
   } else if (useAdvancedScoring && baselineAdvancedSummary) {
     filtered = source.filter((row) => compareAdvancedSummaries(baselineAdvancedSummary, row?.advanced) > 0);
   } else if (Number.isFinite(baselineScore)) {
@@ -1373,6 +1318,10 @@ function refreshSavedPlansUiDerived() {
   const currentBreakpointCheckViewId = String(state.savedPlansUi.breakpointCheckViewPlanId ?? "");
   if (currentBreakpointCheckViewId && !validPlanIds.has(currentBreakpointCheckViewId)) {
     state.savedPlansUi.breakpointCheckViewPlanId = null;
+  }
+  const currentRefinePlanId = String(state.savedPlansUi.refineDialog?.planId ?? "");
+  if (currentRefinePlanId && !validPlanIds.has(currentRefinePlanId)) {
+    state.savedPlansUi.refineDialog = null;
   }
 
   const gradeValueIndex = state.savedPlansUi.gradeValueIndexByStat;
@@ -1586,6 +1535,9 @@ function toggleSavedPlanEdit(planId) {
   const plan = state.savedPlans[planIndex];
   state.savedPlansUi.editingPlanId = safeId;
   state.savedPlansUi.viewPlanId = safeId;
+  if (String(state.savedPlansUi.refineDialog?.planId ?? "") === safeId) {
+    state.savedPlansUi.refineDialog = null;
+  }
   state.savedPlansUi.draftsByPlanId[safeId] = createDraftFromSavedPlan(plan);
   refreshSavedPlansUiAndRender();
 }
@@ -1698,6 +1650,9 @@ function deleteSavedPlan(planId) {
   if (state.savedPlansUi.editingPlanId === safeId) {
     state.savedPlansUi.editingPlanId = null;
   }
+  if (String(state.savedPlansUi.refineDialog?.planId ?? "") === safeId) {
+    state.savedPlansUi.refineDialog = null;
+  }
   refreshSavedPlansUiDerived();
   setStatus(`Deleted saved plan "${plan?.name ?? "Saved plan"}".`);
   render();
@@ -1747,10 +1702,129 @@ function toggleResultPlanDiff({ resultIndex, planIndex }) {
   const key = planDiffToggleKey(resultIndex, planIndex);
   const current = Boolean(state.resultsUi?.diffEnabledByPlanKey?.[key]);
   state.resultsUi.diffEnabledByPlanKey[key] = !current;
+  state.resultsUi.openPlanDetailsByPlanKey[key] = true;
   render();
 }
 
-async function refineSavedPlan(planId) {
+function setResultPlanDetailsOpen({ resultIndex, planIndex, open }) {
+  const key = planDiffToggleKey(resultIndex, planIndex);
+  state.resultsUi.openPlanDetailsByPlanKey[key] = Boolean(open);
+}
+
+function defaultRefineTargetsForSavedPlan(savedPlan) {
+  const baseline = savedPlanTotals(savedPlan);
+  const currentTargets = summarizeTotals(state.targets);
+  return hasAnyTargets(currentTargets) ? currentTargets : baseline;
+}
+
+function openSavedPlanRefineDialog(planId) {
+  const idx = findSavedPlanIndexById(planId);
+  if (idx < 0) {
+    setStatus("Cannot refine saved plan: plan not found.", true);
+    return;
+  }
+
+  const safeId = String(planId ?? "");
+  if (state.savedPlansUi.editingPlanId === safeId) {
+    setStatus("Save or cancel edits before refining this plan.", true);
+    return;
+  }
+
+  const existing = state.savedPlansUi.refineDialog;
+  if (existing && String(existing?.planId ?? "") === safeId) {
+    state.savedPlansUi.refineDialog = null;
+    render();
+    return;
+  }
+
+  state.savedPlansUi.refineDialog = {
+    planId: safeId,
+    objective: REFINE_OBJECTIVES.IMPROVE_SCORE,
+    targets: defaultRefineTargetsForSavedPlan(state.savedPlans[idx]),
+  };
+  render();
+}
+
+function updateSavedPlanRefineDraft({ planId, field, value }) {
+  const safeId = String(planId ?? "");
+  const dialog = state.savedPlansUi.refineDialog;
+  if (!dialog || String(dialog?.planId ?? "") !== safeId) {
+    return;
+  }
+
+  if (field === "objective") {
+    state.savedPlansUi.refineDialog = {
+      ...dialog,
+      objective: normalizeRefineObjective(value),
+    };
+    render();
+    return;
+  }
+
+  if (!STAT_KEYS.includes(field)) {
+    return;
+  }
+
+  state.savedPlansUi.refineDialog = {
+    ...dialog,
+    targets: {
+      ...(dialog.targets ?? {}),
+      [field]: value,
+    },
+  };
+}
+
+function cancelSavedPlanRefineDialog(planId) {
+  const safeId = String(planId ?? "");
+  if (String(state.savedPlansUi.refineDialog?.planId ?? "") === safeId) {
+    state.savedPlansUi.refineDialog = null;
+    render();
+  }
+}
+
+function parseRefineTargets(draftTargets) {
+  const parsedTargets = {};
+  for (const statKey of STAT_KEYS) {
+    const raw = String(draftTargets?.[statKey] ?? "").trim();
+    if (raw.length === 0) {
+      return Number.NaN;
+    }
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed) || parsed < 0 || !Number.isInteger(parsed)) {
+      return Number.NaN;
+    }
+    parsedTargets[statKey] = parsed;
+  }
+  return summarizeTotals(parsedTargets);
+}
+
+async function submitSavedPlanRefineDialog(planId) {
+  const safeId = String(planId ?? "");
+  const dialog = state.savedPlansUi.refineDialog;
+  if (!dialog || String(dialog?.planId ?? "") !== safeId) {
+    setStatus("Cannot refine saved plan: refine options are not open.", true);
+    return;
+  }
+
+  const objective = normalizeRefineObjective(dialog.objective);
+  const refineWithAdvanced = isAdvancedModeEnabled();
+  let targetOverride = null;
+  if (objective === REFINE_OBJECTIVES.HIT_NEW_TARGETS && !refineWithAdvanced) {
+    targetOverride = parseRefineTargets(dialog.targets);
+    if (!Number.isFinite(targetOverride.gathering) || !Number.isFinite(targetOverride.perception) || !Number.isFinite(targetOverride.gp)) {
+      setStatus("Invalid refine targets. Enter non-negative whole numbers.", true);
+      return;
+    }
+  }
+
+  state.savedPlansUi.refineDialog = null;
+  await refineSavedPlan(planId, {
+    objective,
+    targetOverride,
+  });
+}
+
+async function refineSavedPlan(planId, options = {}) {
   const idx = findSavedPlanIndexById(planId);
   if (idx < 0) {
     setStatus("Cannot refine saved plan: plan not found.", true);
@@ -1764,29 +1838,23 @@ async function refineSavedPlan(planId) {
   }
 
   const savedPlan = state.savedPlans[idx];
-  const objective = promptRefineObjective();
-  if (!objective) {
-    return;
-  }
+  const objective = normalizeRefineObjective(options?.objective);
+  const refineWithAdvanced = isAdvancedModeEnabled();
 
   let targetOverride = summarizeTotals(state.targets);
-  if (objective === REFINE_OBJECTIVES.HIT_NEW_TARGETS) {
-    const promptedTargets = promptRefineTargets(savedPlan);
-    if (promptedTargets == null) {
-      return;
-    }
-    if (!Number.isFinite(promptedTargets.gathering) || !Number.isFinite(promptedTargets.perception) || !Number.isFinite(promptedTargets.gp)) {
+  if (objective === REFINE_OBJECTIVES.HIT_NEW_TARGETS && !refineWithAdvanced) {
+    const suppliedTargets = summarizeTotals(options?.targetOverride);
+    if (!Number.isFinite(suppliedTargets.gathering) || !Number.isFinite(suppliedTargets.perception) || !Number.isFinite(suppliedTargets.gp)) {
       setStatus("Invalid refine targets. Enter non-negative whole numbers.", true);
       return;
     }
-    targetOverride = summarizeTotals(promptedTargets);
+    targetOverride = suppliedTargets;
     state.targets = { ...targetOverride };
     state.draftTargets = { ...targetOverride };
   }
 
   syncSelectedGearToSavedPlan(savedPlan);
 
-  const refineWithAdvanced = isAdvancedModeEnabled();
   const baselineTotals = savedPlanTotals(savedPlan);
   const baselineScore = refineWithAdvanced ? NaN : Number(scoreCandidate(baselineTotals, targetOverride));
   const baselineAdvancedSummary = refineWithAdvanced
@@ -1831,6 +1899,10 @@ async function refineSavedPlan(planId) {
   }
 
   if (objective === REFINE_OBJECTIVES.HIT_NEW_TARGETS) {
+    if (refineWithAdvanced) {
+      setStatus(`No refinement results hit additional advanced breakpoints for "${savedPlan.name}".`, true);
+      return;
+    }
     setStatus(`No refinement results met targets for "${savedPlan.name}".`, true);
     return;
   }
@@ -2420,6 +2492,7 @@ async function runSolver(options = {}) {
   state.results =
     options?.skipDiversify || advancedActive ? nextResults : diversifyDisplayOrderByScoreGp(nextResults);
   state.resultsUi.diffEnabledByPlanKey = {};
+  state.resultsUi.openPlanDetailsByPlanKey = {};
   if (advancedActive) {
     solveMeta = {
       ...solveMeta,
@@ -2527,7 +2600,16 @@ function render() {
       exportSavedPlan(planId);
     },
     onRefineSavedPlan: ({ planId }) => {
-      void refineSavedPlan(planId);
+      openSavedPlanRefineDialog(planId);
+    },
+    onSavedPlanRefineDraftChange: ({ planId, field, value }) => {
+      updateSavedPlanRefineDraft({ planId, field, value });
+    },
+    onSubmitSavedPlanRefine: ({ planId }) => {
+      void submitSavedPlanRefineDialog(planId);
+    },
+    onCancelSavedPlanRefine: ({ planId }) => {
+      cancelSavedPlanRefineDialog(planId);
     },
     onToggleSavedPlanBreakpointCheck: ({ planId }) => {
       toggleSavedPlanBreakpointCheck(planId);
@@ -2537,6 +2619,9 @@ function render() {
     },
     onToggleResultPlanDiff: ({ resultIndex, planIndex }) => {
       toggleResultPlanDiff({ resultIndex, planIndex });
+    },
+    onResultPlanDetailsToggle: ({ resultIndex, planIndex, open }) => {
+      setResultPlanDetailsOpen({ resultIndex, planIndex, open });
     },
     onAdvancedEnabledChange: (enabled) => {
       state.advanced.enabled = Boolean(enabled);

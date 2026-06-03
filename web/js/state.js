@@ -40,6 +40,7 @@ export function createInitialState() {
       viewPlanId: null,
       editingPlanId: null,
       breakpointCheckViewPlanId: null,
+      refineDialog: null,
       draftsByPlanId: {},
       previewByPlanId: {},
       breakpointCheckFoodByPlanId: {},
@@ -58,6 +59,7 @@ export function createInitialState() {
     },
     resultsUi: {
       diffEnabledByPlanKey: {},
+      openPlanDetailsByPlanKey: {},
     },
   };
 }

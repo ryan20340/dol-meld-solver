@@ -665,12 +665,6 @@ td {
   background: #fff;
 }
 
-.piece-layout-changed {
-  border-color: #d97706;
-  box-shadow: inset 0 0 0 1px rgba(217, 119, 6, 0.25);
-  background: #fff8ed;
-}
-
 .piece-head {
   font-weight: 600;
   margin-bottom: 4px;
@@ -689,6 +683,13 @@ td {
   align-items: center;
   gap: 7px;
   font-size: 13px;
+  border-radius: 6px;
+  padding: 2px 4px;
+}
+
+.meld-line-changed {
+  background: #fff3d8;
+  box-shadow: inset 0 0 0 1px rgba(217, 119, 6, 0.35);
 }
 
 .meld-line-editable {
@@ -798,6 +799,61 @@ td {
 }
 
 .saved-plan-actions button {
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.saved-plan-refine-panel {
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  padding: 8px;
+  display: grid;
+  gap: 8px;
+}
+
+.saved-plan-refine-panel h5 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.saved-plan-refine-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.saved-plan-refine-targets,
+.saved-plan-refine-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px;
+}
+
+.saved-plan-refine-targets label {
+  display: grid;
+  gap: 4px;
+}
+
+.saved-plan-refine-targets input {
+  width: 110px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.saved-plan-refine-targets input:disabled {
+  background: #eef2f7;
+  color: var(--muted);
+}
+
+.saved-plan-refine-actions button {
   padding: 5px 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
