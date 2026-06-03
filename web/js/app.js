@@ -1282,15 +1282,84 @@ function buildAdjustmentDiffForPlan(baselinePlan, candidatePlan) {
   };
 }
 
+// Materia slots within a piece are interchangeable, but the solver emits melds
+// in its own canonical slot order. When a refine variant is shown next to the
+// baseline it was derived from, that reshuffles unchanged materia into different
+// rows, so the single real change is hard to spot (and looks like the order got
+// scrambled). Reorder each candidate piece's melds to track the baseline: an
+// equivalent meld keeps the baseline row it sat in, and genuine changes drop
+// into the rows whose baseline materia they replaced. Each meld keeps its own
+// slotIndex, so cap notes and diff highlighting (which key on slotIndex, not row
+// position) stay correct.
+function alignCandidateMeldsToBaseline(baselineMelds, candidateMelds) {
+  const baseline = Array.isArray(baselineMelds) ? baselineMelds : [];
+  const candidates = (Array.isArray(candidateMelds) ? candidateMelds : []).map((meld) => ({
+    meld,
+    used: false,
+  }));
+  const slotCount = Math.max(baseline.length, candidates.length);
+  const aligned = new Array(slotCount).fill(null);
+
+  // Equivalent materia keep the baseline row they occupied.
+  for (let i = 0; i < baseline.length; i += 1) {
+    const match = candidates.find((entry) => !entry.used && meldEquivalent(entry.meld, baseline[i]));
+    if (match) {
+      match.used = true;
+      aligned[i] = match.meld;
+    }
+  }
+
+  // Leftover candidate materia (the real changes) fill the vacated rows in order,
+  // then any overflow rows.
+  const leftovers = candidates.filter((entry) => !entry.used);
+  let leftoverIdx = 0;
+  for (let i = 0; i < aligned.length && leftoverIdx < leftovers.length; i += 1) {
+    if (aligned[i] === null) {
+      aligned[i] = leftovers[leftoverIdx].meld;
+      leftoverIdx += 1;
+    }
+  }
+
+  return aligned.filter((meld) => meld !== null);
+}
+
+function alignPlanMeldsToBaseline(baselinePlan, candidatePlan) {
+  const baselinePieces = Array.isArray(baselinePlan?.pieceMelds) ? baselinePlan.pieceMelds : [];
+  const candidatePieces = Array.isArray(candidatePlan?.pieceMelds) ? candidatePlan.pieceMelds : [];
+  if (candidatePieces.length === 0) {
+    return candidatePlan;
+  }
+  const alignedPieces = candidatePieces.map((piece, pieceIndex) => {
+    const baselinePiece = baselinePieces[pieceIndex] ?? null;
+    if (!baselinePiece || !Array.isArray(piece?.melds)) {
+      return piece;
+    }
+    return {
+      ...piece,
+      melds: alignCandidateMeldsToBaseline(baselinePiece.melds, piece.melds),
+    };
+  });
+  return { ...candidatePlan, pieceMelds: alignedPieces };
+}
+
+// Align a refine variant's meld rows to the baseline, then attach the diff.
+// Diffing on the aligned plan is equivalent to the original (changedMeldKeys are
+// keyed on slotIndex, which alignment preserves), so this is the single entry
+// point both refine paths use.
+function decoratePlanWithRefineDiff(baselinePlan, plan) {
+  const aligned = alignPlanMeldsToBaseline(baselinePlan, plan);
+  return {
+    ...aligned,
+    adjustmentDiff: buildAdjustmentDiffForPlan(baselinePlan, aligned),
+  };
+}
+
 function annotateResultsWithRefineDiff(results, baselinePlan) {
   const rows = Array.isArray(results) ? results : [];
   return rows.map((row) => {
     const plans = Array.isArray(row?.plans) ? row.plans : [];
     const plansWithDiff = plans
-      .map((plan) => ({
-        ...plan,
-        adjustmentDiff: buildAdjustmentDiffForPlan(baselinePlan, plan),
-      }))
+      .map((plan) => decoratePlanWithRefineDiff(baselinePlan, plan))
       .sort((left, right) => {
         const leftCount = normalizeNonNegativeInteger(left?.adjustmentDiff?.count, 0);
         const rightCount = normalizeNonNegativeInteger(right?.adjustmentDiff?.count, 0);
@@ -2012,10 +2081,7 @@ async function refineSavedPlan(planId, options = {}) {
     statusContext,
     advancedDisplayLimit: refineWithAdvanced ? ADVANCED_FRONTIER_HARD_CAP : undefined,
     advancedDecoratePlan: refineWithAdvanced
-      ? (plan) => ({
-          ...plan,
-          adjustmentDiff: buildAdjustmentDiffForPlan(savedPlan, plan),
-        })
+      ? (plan) => decoratePlanWithRefineDiff(savedPlan, plan)
       : null,
     advancedPreferLowAdjustment: refineWithAdvanced,
     refineBaseline: refineWithAdvanced ? buildRefineBaselineTokens(savedPlan) : undefined,
