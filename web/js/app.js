@@ -1144,6 +1144,32 @@ function describeMeldShort(meld) {
   return `${statLabel} ${grade > 0 ? `X${grade}` : ""} +${value}`.trim();
 }
 
+// Serializable, order-independent snapshot of a saved plan's melds, keyed by gear
+// slot (rings accumulate in saved-plan order). Passed into the solver so the
+// refine search can prefer layouts that stay close to what the player already has
+// instead of picking a stat-equivalent arrangement that needlessly reshuffles
+// materia across pieces. Tokens match the meld-equivalence used everywhere else
+// (stat + grade + applied value).
+function buildRefineBaselineTokens(savedPlan) {
+  const pieces = Array.isArray(savedPlan?.pieceMelds) ? savedPlan.pieceMelds : [];
+  const bySlot = {};
+  for (const piece of pieces) {
+    const slot = String(piece?.slot ?? "");
+    if (!slot) {
+      continue;
+    }
+    const tokens = (Array.isArray(piece?.melds) ? piece.melds : []).map(
+      (meld) =>
+        `${String(meld?.stat ?? "")}:${normalizeNonNegativeInteger(meld?.grade, 0)}:${normalizeNonNegativeInteger(meld?.appliedValue, 0)}`,
+    );
+    if (!Array.isArray(bySlot[slot])) {
+      bySlot[slot] = [];
+    }
+    bySlot[slot].push(tokens);
+  }
+  return { bySlot };
+}
+
 // Materia slots within a single piece are interchangeable: only the SET of
 // materia matters, not which physical slot holds which. The solver emits melds
 // in a canonical slot order that rarely matches the baseline's order, so a
@@ -1992,6 +2018,7 @@ async function refineSavedPlan(planId, options = {}) {
         })
       : null,
     advancedPreferLowAdjustment: refineWithAdvanced,
+    refineBaseline: refineWithAdvanced ? buildRefineBaselineTokens(savedPlan) : undefined,
     postProcessResults: (rows) => {
       const rowsWithTargets = (Array.isArray(rows) ? rows : []).map((row) => ({
         ...row,
@@ -2141,6 +2168,7 @@ function buildSolveInputForMode(solveMode, options = {}) {
     return buildAdvancedSolveInput(state, {
       baseGathererGp: BASE_GATHERER_GP,
       frontierResultLimit: options?.frontierResultLimit,
+      refineBaseline: options?.refineBaseline,
     });
   }
 

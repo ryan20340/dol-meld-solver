@@ -15,6 +15,7 @@ export function buildAdvancedSolveInput(state, options = {}) {
     useBruteForce: state?.solve?.useBruteForce === true,
     useGearHq: state?.gear?.useHq,
     baseGathererGp: options?.baseGathererGp,
+    refineBaseline: options?.refineBaseline,
   };
 }
 

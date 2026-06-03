@@ -19,6 +19,13 @@ function sortedTopResults(results, maxResults) {
     if (right.score !== left.score) {
       return right.score - left.score;
     }
+    // Refine mode: among equally-scoring layouts prefer the one closest to the
+    // player's existing melds. Inert (all zero) outside refine.
+    const baselineDistanceDiff =
+      (Number(left?.baselineDistance) || 0) - (Number(right?.baselineDistance) || 0);
+    if (baselineDistanceDiff !== 0) {
+      return baselineDistanceDiff;
+    }
     const offHandGatheringDiff =
       (Number(left?.offHandGathering) || 0) - (Number(right?.offHandGathering) || 0);
     if (offHandGatheringDiff !== 0) {
@@ -103,6 +110,14 @@ function buildSegmentLayoutKey(piece, candidate) {
 }
 
 function compareStateRetentionPriority(left, right) {
+  // Refine mode: keep the layout closest to the player's existing melds when
+  // several layouts reach the same totals. Inert (all zero) outside refine.
+  const leftBaselineDistance = Number(left?.baselineDistance) || 0;
+  const rightBaselineDistance = Number(right?.baselineDistance) || 0;
+  if (leftBaselineDistance !== rightBaselineDistance) {
+    return leftBaselineDistance - rightBaselineDistance;
+  }
+
   const leftOffHandGathering = Number(left?.offHandGathering) || 0;
   const rightOffHandGathering = Number(right?.offHandGathering) || 0;
   if (leftOffHandGathering !== rightOffHandGathering) {
@@ -334,6 +349,7 @@ export function depthFirstSearch(config) {
       totals: emptyTotals(),
       offHandGathering: 0,
       meldCount: 0,
+      baselineDistance: 0,
       prev: null,
       segment: null,
       layoutKey: "",
@@ -412,6 +428,8 @@ export function depthFirstSearch(config) {
           offHandGathering:
             (Number(state?.offHandGathering) || 0) + candidateOffHandGathering(pieceRow, candidate),
           meldCount: (Number(state?.meldCount) || 0) + getCandidateMeldCount(candidate),
+          baselineDistance:
+            (Number(state?.baselineDistance) || 0) + (Number(candidate?.__baselineDistance) || 0),
           prev: state,
           segment: {
             piece: pieceRow,
@@ -480,6 +498,7 @@ export function depthFirstSearch(config) {
       score: Number.isFinite(score) ? score : Number.NEGATIVE_INFINITY,
       totals: state.totals,
       offHandGathering: Number(state?.offHandGathering) || 0,
+      baselineDistance: Number(state?.baselineDistance) || 0,
       path: rebuildPath(state),
       meldCount: state.meldCount,
       layoutKey: state.layoutKey,
@@ -497,6 +516,7 @@ export function depthFirstSearch(config) {
       score: entry.score,
       totals: entry.totals,
       offHandGathering: entry.offHandGathering,
+      baselineDistance: entry.baselineDistance,
       path: entry.path,
     })),
     visitedBranches,

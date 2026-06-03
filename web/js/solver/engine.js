@@ -151,6 +151,88 @@ function isDoLGearRow(row) {
 }
 
 
+// --- Refine baseline awareness -------------------------------------------
+// In refine mode the caller supplies the saved plan's melds (refineBaseline).
+// We precompute, per candidate, how many physical meld changes separate that
+// candidate from the baseline layout of its piece, treating each piece's slots
+// as an unordered multiset (slots within a piece are interchangeable, so a pure
+// reorder costs nothing). The search then prefers, among layouts that reach the
+// same totals, the one with the lowest accumulated distance — so it keeps what
+// the player already has instead of reshuffling materia across pieces.
+
+function tokenMultiset(tokens) {
+  const counts = new Map();
+  for (const token of Array.isArray(tokens) ? tokens : []) {
+    const key = String(token);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function candidateTokenMultiset(candidate) {
+  const melds = Array.isArray(candidate?.melds) ? candidate.melds : [];
+  return tokenMultiset(
+    melds.map(
+      (meld) =>
+        `${String(meld?.stat ?? "")}:${normalizeNonNegativeInteger(meld?.grade, 0)}:${normalizeNonNegativeInteger(meld?.appliedValue, 0)}`,
+    ),
+  );
+}
+
+// Minimum number of single-slot edits to turn one piece's materia multiset into
+// another: match identical materia, then the leftovers pair into replaces with
+// any surplus on either side counting as add/remove — i.e. max(extraA, extraB).
+function multisetEditDistance(leftMultiset, rightMultiset) {
+  const keys = new Set([...leftMultiset.keys(), ...rightMultiset.keys()]);
+  let extraLeft = 0;
+  let extraRight = 0;
+  for (const key of keys) {
+    const left = leftMultiset.get(key) ?? 0;
+    const right = rightMultiset.get(key) ?? 0;
+    if (left > right) {
+      extraLeft += left - right;
+    } else if (right > left) {
+      extraRight += right - left;
+    }
+  }
+  return Math.max(extraLeft, extraRight);
+}
+
+// Align the baseline's per-slot meld multisets to the ordered piece list. Each
+// slot's baseline entries are consumed in saved-plan order, so the two rings map
+// to the two ring pieces positionally.
+function buildBaselineMultisetByPieceIndex(orderedPieces, refineBaseline) {
+  const bySlot = refineBaseline?.bySlot;
+  if (!bySlot || typeof bySlot !== "object") {
+    return null;
+  }
+  const queues = new Map();
+  for (const [slot, list] of Object.entries(bySlot)) {
+    queues.set(String(slot), Array.isArray(list) ? [...list] : []);
+  }
+  return orderedPieces.map((piece) => {
+    const queue = queues.get(String(piece?.slot ?? ""));
+    const tokens = Array.isArray(queue) && queue.length > 0 ? queue.shift() : [];
+    return tokenMultiset(tokens);
+  });
+}
+
+function annotateCandidatesWithBaselineDistance(pieceCandidates, baselineByPieceIndex) {
+  if (!Array.isArray(baselineByPieceIndex)) {
+    return;
+  }
+  pieceCandidates.forEach((entry, pieceIndex) => {
+    const baseline = baselineByPieceIndex[pieceIndex] ?? tokenMultiset([]);
+    const candidates = Array.isArray(entry?.candidates) ? entry.candidates : [];
+    for (const candidate of candidates) {
+      candidate.__baselineDistance = multisetEditDistance(
+        baseline,
+        candidateTokenMultiset(candidate),
+      );
+    }
+  });
+}
+
 function meetsTargets(totals, targets) {
   const targetGathering = normalizePositiveInteger(targets?.gathering, 0);
   const targetPerception = normalizePositiveInteger(targets?.perception, 0);
@@ -573,6 +655,15 @@ export function solveLegalityOnly(input, options = {}) {
     }),
   }));
 
+  // Refine mode: tag every candidate with its distance from the baseline layout
+  // so the search and variant selection can favor minimal-change plans.
+  const baselineByPieceIndex = buildBaselineMultisetByPieceIndex(
+    orderedPieces,
+    input?.refineBaseline,
+  );
+  const useBaselineDistance = Array.isArray(baselineByPieceIndex);
+  annotateCandidatesWithBaselineDistance(pieceCandidates, baselineByPieceIndex);
+
   const baseTotals = orderedPieces.reduce(
     (totals, piece) => addTotals(totals, getGearRowTrackedStats(piece, { useHq: useGearHq })),
     emptyTotals(),
@@ -627,6 +718,13 @@ export function solveLegalityOnly(input, options = {}) {
   const results = Array.from(plansByTotals.values())
     .map((group) => {
       group.sort((left, right) => {
+        if (useBaselineDistance) {
+          const baselineDiff =
+            (Number(left?.baselineDistance) || 0) - (Number(right?.baselineDistance) || 0);
+          if (baselineDiff !== 0) {
+            return baselineDiff;
+          }
+        }
         const offHandGatheringDiff =
           (Number(left?.offHandGathering) || 0) - (Number(right?.offHandGathering) || 0);
         if (offHandGatheringDiff !== 0) {
@@ -635,8 +733,7 @@ export function solveLegalityOnly(input, options = {}) {
         return (Number(right?.score) || 0) - (Number(left?.score) || 0);
       });
       const rep = group[0];
-      const plans = diversifyPlanVariants(
-        group.map((entry) => {
+      const builtPlans = group.map((entry) => {
           const pieceMelds = entry.path.map((segment) => ({
             pieceId: Number(segment?.piece?.id) || 0,
             slot: segment?.piece?.slot,
@@ -679,7 +776,18 @@ export function solveLegalityOnly(input, options = {}) {
             __varianceTokenWeights: varianceTokenWeights,
             __varianceTokenKey: varianceTokenKey(varianceTokenWeights),
           };
-        }),
+        });
+      // In refine mode the group is already ordered by baseline edit distance, so
+      // keep the closest layouts as-is; otherwise spread variants for visual variety.
+      const plans = (
+        useBaselineDistance
+          ? builtPlans.map((plan) => {
+              const cleaned = { ...plan };
+              delete cleaned.__varianceTokenWeights;
+              delete cleaned.__varianceTokenKey;
+              return cleaned;
+            })
+          : diversifyPlanVariants(builtPlans)
       ).slice(0, DISPLAY_MAX_PLANS_PER_TOTAL);
       // Derive totals from the melds actually shown in the representative plan so
       // the displayed layout always sums to the reported totals — including any
