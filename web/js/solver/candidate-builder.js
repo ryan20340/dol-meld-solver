@@ -497,9 +497,14 @@ export function buildCandidatesForPiece(piece, options) {
     ? Math.floor(rawMaxCandidatesPerPiece)
     : Number.POSITIVE_INFINITY;
   const materiaRows = Array.isArray(options?.materiaRows) ? options.materiaRows : [];
-  const rawMaxSlotsOverride = Number(options?.maxSlotsOverride);
+  // Guard null/undefined BEFORE Number(): Number(null) === 0, which would slice
+  // every piece down to zero slots and forbid all melds. null = no cap.
+  const rawMaxSlotsOverride = options?.maxSlotsOverride;
+  const numericMaxSlotsOverride = Number(rawMaxSlotsOverride);
   const maxSlotsOverride =
-    Number.isFinite(rawMaxSlotsOverride) && rawMaxSlotsOverride >= 0 ? Math.floor(rawMaxSlotsOverride) : null;
+    rawMaxSlotsOverride != null && Number.isFinite(numericMaxSlotsOverride) && numericMaxSlotsOverride >= 0
+      ? Math.floor(numericMaxSlotsOverride)
+      : null;
 
   const slots = buildPieceSlots(piece, rules, maxSlotsOverride);
   if (slots.length === 0 || materiaRows.length === 0) {
