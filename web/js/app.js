@@ -1602,7 +1602,6 @@ function updateSavedPlanDraftField({ planId, pieceIndex, meldIndex, field, value
   }
   if (field === "name") {
     draft.name = String(value ?? "");
-    refreshSavedPlansUiAndRender();
     return;
   }
   if (field === "foodItemId") {
