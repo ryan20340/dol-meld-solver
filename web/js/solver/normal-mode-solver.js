@@ -24,6 +24,9 @@ export function buildNormalSolveInput(state, options = {}) {
     useBruteForce: state?.solve?.useBruteForce === true,
     useGearHq: state?.gear?.useHq,
     baseGathererGp: options?.baseGathererGp,
+    // Present only when refining a saved plan; lets the engine bias the search
+    // toward layouts that re-meld the fewest materia. Inert for normal solves.
+    refineBaseline: options?.refineBaseline,
   };
 }
 

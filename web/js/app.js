@@ -2156,7 +2156,14 @@ async function refineSavedPlan(planId, options = {}) {
       ? (plan) => decoratePlanWithRefineDiff(savedPlan, plan, { disregardSlotOrder })
       : null,
     advancedPreferLowAdjustment: refineWithAdvanced,
-    refineBaseline: refineWithAdvanced ? buildRefineBaselineTokens(savedPlan) : undefined,
+    // Feed the baseline to the engine in both modes so the search itself
+    // minimizes re-meld cost, not just the final ranking. useCascade mirrors the
+    // toggle: off (default) = slot-order-aware re-meld cost, on = raw change
+    // count. Only refine sets refineBaseline, so normal solves are unaffected.
+    refineBaseline: {
+      ...buildRefineBaselineTokens(savedPlan),
+      useCascade: !disregardSlotOrder,
+    },
     postProcessResults: (rows) => {
       const rowsWithTargets = (Array.isArray(rows) ? rows : []).map((row) => ({
         ...row,
@@ -2313,6 +2320,7 @@ function buildSolveInputForMode(solveMode, options = {}) {
   return buildNormalSolveInput(state, {
     targetsOverride: options?.targetsOverride,
     baseGathererGp: BASE_GATHERER_GP,
+    refineBaseline: options?.refineBaseline,
   });
 }
 

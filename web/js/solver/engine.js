@@ -153,12 +153,16 @@ function isDoLGearRow(row) {
 
 // --- Refine baseline awareness -------------------------------------------
 // In refine mode the caller supplies the saved plan's melds (refineBaseline).
-// We precompute, per candidate, how many physical meld changes separate that
-// candidate from the baseline layout of its piece, treating each piece's slots
-// as an unordered multiset (slots within a piece are interchangeable, so a pure
-// reorder costs nothing). The search then prefers, among layouts that reach the
-// same totals, the one with the lowest accumulated distance — so it keeps what
-// the player already has instead of reshuffling materia across pieces.
+// Materia melded into a piece behaves like a stack: changing the materia in slot
+// i forces retrieving (destroying) every materia above it and re-melding slot i
+// and up. So the real cost of touching a piece is not the count of changed
+// materia but (filled slots) - (earliest changed slot): every materia from the
+// first change to the top has to be re-melded. We precompute that re-meld cost
+// per candidate against the baseline's FIXED physical slot order (the player
+// cannot reorder what they already own; slots in the new candidate are free to
+// assign). The search then prefers, among layouts that reach the same totals,
+// the one with the lowest accumulated re-meld cost — concentrating changes into
+// as few pieces, and as high in each piece, as possible.
 
 function tokenMultiset(tokens) {
   const counts = new Map();
@@ -182,6 +186,7 @@ function candidateTokenMultiset(candidate) {
 // Minimum number of single-slot edits to turn one piece's materia multiset into
 // another: match identical materia, then the leftovers pair into replaces with
 // any surplus on either side counting as add/remove — i.e. max(extraA, extraB).
+// Used when "disregard re-meld slot order" is on (rank by changed slots only).
 function multisetEditDistance(leftMultiset, rightMultiset) {
   const keys = new Set([...leftMultiset.keys(), ...rightMultiset.keys()]);
   let extraLeft = 0;
@@ -198,10 +203,34 @@ function multisetEditDistance(leftMultiset, rightMultiset) {
   return Math.max(extraLeft, extraRight);
 }
 
-// Align the baseline's per-slot meld multisets to the ordered piece list. Each
-// slot's baseline entries are consumed in saved-plan order, so the two rings map
-// to the two ring pieces positionally.
-function buildBaselineMultisetByPieceIndex(orderedPieces, refineBaseline) {
+// Re-meld cost of turning the baseline piece (given by its fixed, ordered slot
+// tokens) into this candidate's materia set. Slots within the candidate are
+// interchangeable, so we keep the longest bottom-up run of baseline slots the
+// candidate can still cover (those materia stay put); the first slot it cannot
+// cover, plus everything above it, must be re-melded: filled - matchedPrefix.
+function cascadeRemeldDistance(baselineTokens, candidate) {
+  const baseline = Array.isArray(baselineTokens) ? baselineTokens : [];
+  const remaining = candidateTokenMultiset(candidate);
+  const candidateMeldCount = Array.isArray(candidate?.melds) ? candidate.melds.length : 0;
+  const filledSlots = Math.max(baseline.length, candidateMeldCount);
+  let matchedPrefix = 0;
+  for (let slot = 0; slot < baseline.length; slot += 1) {
+    const token = String(baseline[slot]);
+    const available = remaining.get(token) ?? 0;
+    if (available <= 0) {
+      break;
+    }
+    remaining.set(token, available - 1);
+    matchedPrefix += 1;
+  }
+  return Math.max(0, filledSlots - matchedPrefix);
+}
+
+// Align the baseline's per-slot ordered meld tokens to the ordered piece list.
+// Each slot's baseline entries are consumed in saved-plan order, so the two rings
+// map to the two ring pieces positionally. The token order within a piece is the
+// player's real physical slot order, which the cascade cost depends on.
+function buildBaselineTokensByPieceIndex(orderedPieces, refineBaseline) {
   const bySlot = refineBaseline?.bySlot;
   if (!bySlot || typeof bySlot !== "object") {
     return null;
@@ -213,22 +242,22 @@ function buildBaselineMultisetByPieceIndex(orderedPieces, refineBaseline) {
   return orderedPieces.map((piece) => {
     const queue = queues.get(String(piece?.slot ?? ""));
     const tokens = Array.isArray(queue) && queue.length > 0 ? queue.shift() : [];
-    return tokenMultiset(tokens);
+    return Array.isArray(tokens) ? tokens.map((token) => String(token)) : [];
   });
 }
 
-function annotateCandidatesWithBaselineDistance(pieceCandidates, baselineByPieceIndex) {
+function annotateCandidatesWithBaselineDistance(pieceCandidates, baselineByPieceIndex, useCascade) {
   if (!Array.isArray(baselineByPieceIndex)) {
     return;
   }
   pieceCandidates.forEach((entry, pieceIndex) => {
-    const baseline = baselineByPieceIndex[pieceIndex] ?? tokenMultiset([]);
+    const baselineTokens = baselineByPieceIndex[pieceIndex] ?? [];
+    const baselineMultiset = useCascade ? null : tokenMultiset(baselineTokens);
     const candidates = Array.isArray(entry?.candidates) ? entry.candidates : [];
     for (const candidate of candidates) {
-      candidate.__baselineDistance = multisetEditDistance(
-        baseline,
-        candidateTokenMultiset(candidate),
-      );
+      candidate.__baselineDistance = useCascade
+        ? cascadeRemeldDistance(baselineTokens, candidate)
+        : multisetEditDistance(baselineMultiset, candidateTokenMultiset(candidate));
     }
   });
 }
@@ -657,12 +686,19 @@ export function solveLegalityOnly(input, options = {}) {
 
   // Refine mode: tag every candidate with its distance from the baseline layout
   // so the search and variant selection can favor minimal-change plans.
-  const baselineByPieceIndex = buildBaselineMultisetByPieceIndex(
+  const baselineByPieceIndex = buildBaselineTokensByPieceIndex(
     orderedPieces,
     input?.refineBaseline,
   );
   const useBaselineDistance = Array.isArray(baselineByPieceIndex);
-  annotateCandidatesWithBaselineDistance(pieceCandidates, baselineByPieceIndex);
+  // Default to the slot-order-aware (cascade) cost; the "disregard re-meld slot
+  // order" toggle sets useCascade=false to fall back to raw changed-slot counts.
+  const useCascadeBaselineDistance = input?.refineBaseline?.useCascade !== false;
+  annotateCandidatesWithBaselineDistance(
+    pieceCandidates,
+    baselineByPieceIndex,
+    useCascadeBaselineDistance,
+  );
 
   const baseTotals = orderedPieces.reduce(
     (totals, piece) => addTotals(totals, getGearRowTrackedStats(piece, { useHq: useGearHq })),
