@@ -687,9 +687,34 @@ td {
   padding: 2px 4px;
 }
 
-.meld-line-changed {
-  background: #fff3d8;
-  box-shadow: inset 0 0 0 1px rgba(217, 119, 6, 0.35);
+.meld-line-before {
+  background: #fde7e7;
+  box-shadow: inset 0 0 0 1px rgba(220, 38, 38, 0.35);
+}
+
+.meld-line-before > span:last-child {
+  text-decoration: line-through;
+  color: #991b1b;
+}
+
+.meld-line-after {
+  background: #e6f6ea;
+  box-shadow: inset 0 0 0 1px rgba(22, 163, 74, 0.4);
+}
+
+.meld-diff-marker {
+  font-weight: 700;
+  width: 12px;
+  text-align: center;
+  flex: 0 0 auto;
+}
+
+.meld-line-before .meld-diff-marker {
+  color: #dc2626;
+}
+
+.meld-line-after .meld-diff-marker {
+  color: #16a34a;
 }
 
 .meld-line-editable {

@@ -1218,6 +1218,10 @@ function diffPieceMelds(pieceIndex, baselinePiece, candidatePiece) {
   const remainingBaseline = baseline.filter((entry) => !entry.used);
   const lines = [];
   const changedMeldKeys = [];
+  // Per-meld before/after records so the UI can show the replaced materia (red)
+  // stacked above the new one (green). `before`/`after` are the raw meld objects;
+  // a null `before` means a pure add, a null `after` means a removal.
+  const changes = [];
 
   // Pair leftover candidate materia with leftover baseline materia as replaces
   // (preferring a same-slot partner for a readable label); extras are adds.
@@ -1235,8 +1239,10 @@ function diffPieceMelds(pieceIndex, baselinePiece, candidatePiece) {
       lines.push(
         `${pieceLabel} slot ${candSlot + 1}: replace ${describeMeldShort(base.meld)} -> ${describeMeldShort(cand.meld)}`,
       );
+      changes.push({ pieceIndex, slotIndex: candSlot, before: base.meld, after: cand.meld });
     } else {
       lines.push(`${pieceLabel} slot ${candSlot + 1}: add ${describeMeldShort(cand.meld)}`);
+      changes.push({ pieceIndex, slotIndex: candSlot, before: null, after: cand.meld });
     }
     changedMeldKeys.push(`${pieceIndex}:${candSlot}`);
   }
@@ -1244,9 +1250,10 @@ function diffPieceMelds(pieceIndex, baselinePiece, candidatePiece) {
   for (const base of remainingBaseline) {
     const baseSlot = normalizeMeldKey(base.meld);
     lines.push(`${pieceLabel} slot ${baseSlot + 1}: remove ${describeMeldShort(base.meld)}`);
+    changes.push({ pieceIndex, slotIndex: baseSlot, before: base.meld, after: null });
   }
 
-  return { lines, changedMeldKeys };
+  return { lines, changedMeldKeys, changes };
 }
 
 function buildAdjustmentDiffForPlan(baselinePlan, candidatePlan) {
@@ -1256,6 +1263,7 @@ function buildAdjustmentDiffForPlan(baselinePlan, candidatePlan) {
   const lines = [];
   const changedPieceIndices = new Set();
   const changedMeldKeys = new Set();
+  const changes = [];
 
   for (let pieceIndex = 0; pieceIndex < maxPieceCount; pieceIndex += 1) {
     const pieceDiff = diffPieceMelds(
@@ -1272,6 +1280,9 @@ function buildAdjustmentDiffForPlan(baselinePlan, candidatePlan) {
     for (const key of pieceDiff.changedMeldKeys) {
       changedMeldKeys.add(key);
     }
+    for (const change of pieceDiff.changes) {
+      changes.push(change);
+    }
   }
 
   return {
@@ -1279,6 +1290,7 @@ function buildAdjustmentDiffForPlan(baselinePlan, candidatePlan) {
     lines,
     changedPieceIndices: Array.from(changedPieceIndices.values()).sort((a, b) => a - b),
     changedMeldKeys: Array.from(changedMeldKeys.values()).sort(),
+    changes,
   };
 }
 

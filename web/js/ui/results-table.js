@@ -589,25 +589,41 @@ function buildAdvancedConfigPanel(state) {
   `;
 }
 
-function buildMeldLine(meld, options = {}) {
+function meldDotClass(meld) {
   const isOvermeld = Boolean(meld?.isOvermeld);
   const overmeldIndex = Number(meld?.overmeldIndex ?? -1);
-  const dotClass = isOvermeld
+  return isOvermeld
     ? overmeldIndex === 0 ? "meld-dot overmeld-first" : "meld-dot overmeld"
     : "meld-dot guaranteed";
+}
+
+// Render a single read-only meld row. `extraClass`/`marker` carry the before/after
+// diff styling (red "before" row, green "after" row); both are empty for a plain row.
+function buildMeldDisplayLine(meld, extraClass = "", marker = "") {
   const statLabel = STAT_DISPLAY[meld?.stat] ?? String(meld?.stat ?? "").toUpperCase();
+  const applied = Number(meld?.appliedValue) || 0;
+  const raw = Number(meld?.rawValue) || 0;
+  const grade = Number(meld?.grade) || 0;
+  const cappedNote = raw !== applied ? ` <span class="muted">(raw +${raw})</span>` : "";
+  const markerHtml = marker ? `<span class="meld-diff-marker">${escapeHtml(marker)}</span>` : "";
+  const lineClass = extraClass ? `meld-line ${extraClass}` : "meld-line";
+  return `
+    <li class="${lineClass}">
+      <span class="${escapeHtml(meldDotClass(meld))}"></span>
+      ${markerHtml}
+      <span>${escapeHtml(statLabel)} +${applied} (${escapeHtml(gradeToRoman(grade))})${cappedNote}</span>
+    </li>
+  `;
+}
+
+function buildMeldLine(meld, options = {}) {
+  const dotClass = meldDotClass(meld);
   const applied = Number(meld?.appliedValue) || 0;
   const raw = Number(meld?.rawValue) || 0;
   const grade = Number(meld?.grade) || 0;
   const pieceIndex = normalizeNonNegativeInteger(options?.pieceIndex);
   const meldIndex = normalizeNonNegativeInteger(options?.meldIndex);
   const slotIndex = normalizeNonNegativeInteger(meld?.slotIndex, meldIndex);
-  const changedMeldKeySet = options?.changedMeldKeySet instanceof Set ? options.changedMeldKeySet : null;
-  const isChangedMeld =
-    Boolean(options?.highlightDiff) &&
-    changedMeldKeySet instanceof Set &&
-    changedMeldKeySet.has(`${pieceIndex}:${slotIndex}`);
-  const meldLineClass = isChangedMeld ? "meld-line meld-line-changed" : "meld-line";
   if (options?.isEditing) {
     const stat = String(meld?.stat ?? "gathering");
     const statOptions = buildStatOptionsHtml(stat);
@@ -624,7 +640,7 @@ function buildMeldLine(meld, options = {}) {
       ? `Applied +${applied} (capped, raw +${raw})`
       : `Applied +${applied}`;
     return `
-      <li class="${meldLineClass} meld-line-editable">
+      <li class="meld-line meld-line-editable">
         <span class="${escapeHtml(dotClass)}"></span>
         <span class="saved-plan-inline-slot muted">${escapeHtml(slotLabel)}</span>
         <select data-action="saved-plan-edit-stat" data-plan-id="${escapeHtml(options?.planId)}" data-piece-index="${pieceIndex}" data-meld-index="${meldIndex}">
@@ -637,13 +653,20 @@ function buildMeldLine(meld, options = {}) {
       </li>
     `;
   }
-  const cappedNote = raw !== applied ? ` <span class="muted">(raw +${raw})</span>` : "";
-  return `
-    <li class="${meldLineClass}">
-      <span class="${escapeHtml(dotClass)}"></span>
-      <span>${escapeHtml(statLabel)} +${applied} (${escapeHtml(gradeToRoman(grade))})${cappedNote}</span>
-    </li>
-  `;
+  // Refine diff: a changed slot shows the replaced materia (red) above the new
+  // one (green). A pure add has no "before" row.
+  const meldChangeByKey = options?.meldChangeByKey instanceof Map ? options.meldChangeByKey : null;
+  const changeRecord =
+    Boolean(options?.highlightDiff) && meldChangeByKey
+      ? meldChangeByKey.get(`${pieceIndex}:${slotIndex}`)
+      : null;
+  if (changeRecord) {
+    const beforeLine = changeRecord.before
+      ? buildMeldDisplayLine(changeRecord.before, "meld-line-before", "−")
+      : "";
+    return beforeLine + buildMeldDisplayLine(meld, "meld-line-after", "+");
+  }
+  return buildMeldDisplayLine(meld);
 }
 
 function legalGradesForMeld(statKey, meld, options = {}) {
@@ -917,6 +940,18 @@ function buildPieceLayout(piece, options = {}) {
   const meldLines = melds
     .map((meld, meldIndex) => buildMeldLine(meld, { ...options, meldIndex }))
     .join("");
+  // Refine diff: materia present in the baseline but dropped by this variant have
+  // no candidate row to attach to, so render them as red "before"-only rows.
+  const pieceIndex = normalizeNonNegativeInteger(options?.pieceIndex);
+  const removedMeldsByPiece =
+    options?.removedMeldsByPiece instanceof Map ? options.removedMeldsByPiece : null;
+  const removedMelds =
+    Boolean(options?.highlightDiff) && removedMeldsByPiece
+      ? removedMeldsByPiece.get(pieceIndex) ?? []
+      : [];
+  const removedLines = removedMelds
+    .map((meld) => buildMeldDisplayLine(meld, "meld-line-before", "−"))
+    .join("");
   const pieceCapSummary = buildPieceCapSummary(piece);
   return `
     <div class="${pieceLayoutClass}">
@@ -925,7 +960,7 @@ function buildPieceLayout(piece, options = {}) {
         ${pieceHeadContent}
       </div>
       ${pieceStatTotal}
-      <ul class="meld-list">${meldLines}</ul>
+      <ul class="meld-list">${meldLines}${removedLines}</ul>
       ${pieceCapSummary}
     </div>
   `;
@@ -1440,21 +1475,35 @@ function buildPlansRows(row, resultIndex, state, iconContext = {}) {
   return plans.map((plan, planIndex) => {
     const planDiffKey = `${resultIndex}:${planIndex}`;
     const diffEnabled = Boolean(state?.resultsUi?.diffEnabledByPlanKey?.[planDiffKey]);
-    const changedMeldKeys = Array.isArray(plan?.adjustmentDiff?.changedMeldKeys)
-      ? plan.adjustmentDiff.changedMeldKeys
-      : [];
-    const changedMeldKeySet = new Set(changedMeldKeys.map((value) => String(value ?? "")));
+    // Map each changed candidate meld back to the baseline meld it replaced, so a
+    // changed row can render the old materia (red) above the new one (green).
+    // Removals (no candidate meld) are grouped per piece and appended as red-only
+    // rows by buildPieceLayout.
+    const changes = Array.isArray(plan?.adjustmentDiff?.changes) ? plan.adjustmentDiff.changes : [];
+    const meldChangeByKey = new Map();
+    const removedMeldsByPiece = new Map();
+    for (const change of changes) {
+      const pieceIndex = normalizeNonNegativeInteger(change?.pieceIndex);
+      const slotIndex = normalizeNonNegativeInteger(change?.slotIndex);
+      if (change?.after) {
+        meldChangeByKey.set(`${pieceIndex}:${slotIndex}`, change);
+      } else if (change?.before) {
+        const list = removedMeldsByPiece.get(pieceIndex) ?? [];
+        list.push(change.before);
+        removedMeldsByPiece.set(pieceIndex, list);
+      }
+    }
     const canToggleDiff = Boolean(plan?.adjustmentDiff);
     const detailsOpen =
       diffEnabled || Boolean(state?.resultsUi?.openPlanDetailsByPlanKey?.[planDiffKey]);
     const label = `Variant ${planIndex + 1} (${variantTotalsLabel(plan, row)} | ${variantFoodLabel(plan?.food ?? row?.food)})`;
     const diffButton = canToggleDiff
-      ? `<button type="button" data-action="result-plan-toggle-diff" data-result-index="${resultIndex}" data-plan-index="${planIndex}">${diffEnabled ? "Hide Diff Highlight" : "Show Diff Highlight"}</button>`
+      ? `<button type="button" data-action="result-plan-toggle-diff" data-result-index="${resultIndex}" data-plan-index="${planIndex}">${diffEnabled ? "Hide Before/After" : "Show Before/After"}</button>`
       : "";
     const diffSection = canToggleDiff
       ? (diffEnabled
         ? buildAdjustmentDiffHtml(plan?.adjustmentDiff)
-        : '<p class="muted adjustment-summary">Diff hidden. Enable highlight to view changes.</p>')
+        : '<p class="muted adjustment-summary">Before/after hidden. Show it to compare against your current melds.</p>')
       : buildAdjustmentDiffHtml(plan?.adjustmentDiff);
     return `
       <details
@@ -1471,7 +1520,8 @@ function buildPlansRows(row, resultIndex, state, iconContext = {}) {
         ${diffSection}
         ${buildPlanLayoutHtml(plan, plan?.food ?? row.food, {
           highlightDiff: diffEnabled,
-          changedMeldKeySet,
+          meldChangeByKey,
+          removedMeldsByPiece,
           advancedProfiles: Array.isArray(plan?.advanced?.profiles) ? plan.advanced.profiles : [],
           gearIconIdByItemId: iconContext?.gearIconIdByItemId,
           foodIconIdByItemId: iconContext?.foodIconIdByItemId,
