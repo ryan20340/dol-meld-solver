@@ -490,13 +490,15 @@ class BuildData:
     ) -> dict:
         """Compute per-stat materia caps (max additional stat from materia).
 
-        total_cap = floor(ItemLevel[ilvl][stat] * SlotModifier[stat][slot] / 1000)
+        total_cap = round(ItemLevel[ilvl][stat] * SlotModifier[stat][slot] / 1000)
         materia_cap = max(0, total_cap - effective_base_stat)
         where effective_base_stat uses HQ stats if the piece can be HQ.
 
-        The game floors the stat ceiling (matching Etro/Ariyala); using ceil here
-        inflated the cap by 1 on any piece whose coeff*mod wasn't a multiple of
-        1000, which is only visible once a stat is melded up to the cap.
+        The game rounds the stat ceiling to the nearest whole point (ties up), not
+        floor or ceil: e.g. 284.25 -> 284 but 568.5 -> 569. ceil over-counted the
+        .25 cases and floor under-counted the .5 cases. We round-half-up with
+        integer math ((x + 500) // 1000) because Python's round() uses banker's
+        rounding (round(568.5) == 568), which would be wrong on the .5 ties.
         """
         ilvl_coeffs = item_level_table.get(item_level, {}) if item_level is not None else {}
         caps = {}
@@ -506,7 +508,7 @@ class BuildData:
             if coeff <= 0 or mod <= 0:
                 caps[stat_key] = 0
                 continue
-            total_cap = (coeff * mod) // 1000
+            total_cap = (coeff * mod + 500) // 1000
             base = tracked_base_stats.get(stat_key) or 0
             if can_be_hq:
                 base += tracked_special_stats.get(stat_key) or 0
