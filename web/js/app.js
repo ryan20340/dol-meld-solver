@@ -1128,15 +1128,6 @@ function normalizeMeldKey(meld) {
   return normalizeNonNegativeInteger(meld?.slotIndex, 0);
 }
 
-function buildMeldLookupBySlotIndex(piece) {
-  const melds = Array.isArray(piece?.melds) ? piece.melds : [];
-  const lookup = new Map();
-  for (const meld of melds) {
-    lookup.set(normalizeMeldKey(meld), meld);
-  }
-  return lookup;
-}
-
 function meldEquivalent(left, right) {
   return (
     String(left?.stat ?? "") === String(right?.stat ?? "") &&
@@ -1153,6 +1144,85 @@ function describeMeldShort(meld) {
   return `${statLabel} ${grade > 0 ? `X${grade}` : ""} +${value}`.trim();
 }
 
+// Materia slots within a single piece are interchangeable: only the SET of
+// materia matters, not which physical slot holds which. The solver emits melds
+// in a canonical slot order that rarely matches the baseline's order, so a
+// position-by-position comparison reports phantom "replace" changes for pieces
+// whose materia set is actually unchanged. Diff each piece as a multiset
+// instead — match identical materia (preferring the same slot for cleaner
+// labels), then pair the genuine leftovers into the minimal set of edits.
+function diffPieceMelds(pieceIndex, baselinePiece, candidatePiece) {
+  const pieceSlot = candidatePiece?.slot ?? baselinePiece?.slot ?? "unknown";
+  const pieceName = candidatePiece?.pieceName ?? baselinePiece?.pieceName ?? "Unknown piece";
+  const pieceLabel = `${slotLabel(pieceSlot)} - ${pieceName}`;
+
+  const baseline = (Array.isArray(baselinePiece?.melds) ? baselinePiece.melds : []).map((meld) => ({
+    meld,
+    used: false,
+  }));
+  const candidate = (Array.isArray(candidatePiece?.melds) ? candidatePiece.melds : []).map((meld) => ({
+    meld,
+    used: false,
+  }));
+
+  // Pass 1: match identical materia sitting in the same slot.
+  for (const cand of candidate) {
+    const candSlot = normalizeMeldKey(cand.meld);
+    const match = baseline.find(
+      (base) =>
+        !base.used && normalizeMeldKey(base.meld) === candSlot && meldEquivalent(base.meld, cand.meld),
+    );
+    if (match) {
+      match.used = true;
+      cand.used = true;
+    }
+  }
+  // Pass 2: match identical materia regardless of slot (pure reorder = no edit).
+  for (const cand of candidate) {
+    if (cand.used) {
+      continue;
+    }
+    const match = baseline.find((base) => !base.used && meldEquivalent(base.meld, cand.meld));
+    if (match) {
+      match.used = true;
+      cand.used = true;
+    }
+  }
+
+  const remainingBaseline = baseline.filter((entry) => !entry.used);
+  const lines = [];
+  const changedMeldKeys = [];
+
+  // Pair leftover candidate materia with leftover baseline materia as replaces
+  // (preferring a same-slot partner for a readable label); extras are adds.
+  for (const cand of candidate) {
+    if (cand.used) {
+      continue;
+    }
+    const candSlot = normalizeMeldKey(cand.meld);
+    let baseIdx = remainingBaseline.findIndex((entry) => normalizeMeldKey(entry.meld) === candSlot);
+    if (baseIdx < 0 && remainingBaseline.length > 0) {
+      baseIdx = 0;
+    }
+    if (baseIdx >= 0) {
+      const [base] = remainingBaseline.splice(baseIdx, 1);
+      lines.push(
+        `${pieceLabel} slot ${candSlot + 1}: replace ${describeMeldShort(base.meld)} -> ${describeMeldShort(cand.meld)}`,
+      );
+    } else {
+      lines.push(`${pieceLabel} slot ${candSlot + 1}: add ${describeMeldShort(cand.meld)}`);
+    }
+    changedMeldKeys.push(`${pieceIndex}:${candSlot}`);
+  }
+  // Any baseline materia with no candidate counterpart is a removal.
+  for (const base of remainingBaseline) {
+    const baseSlot = normalizeMeldKey(base.meld);
+    lines.push(`${pieceLabel} slot ${baseSlot + 1}: remove ${describeMeldShort(base.meld)}`);
+  }
+
+  return { lines, changedMeldKeys };
+}
+
 function buildAdjustmentDiffForPlan(baselinePlan, candidatePlan) {
   const baselinePieces = Array.isArray(baselinePlan?.pieceMelds) ? baselinePlan.pieceMelds : [];
   const candidatePieces = Array.isArray(candidatePlan?.pieceMelds) ? candidatePlan.pieceMelds : [];
@@ -1162,44 +1232,19 @@ function buildAdjustmentDiffForPlan(baselinePlan, candidatePlan) {
   const changedMeldKeys = new Set();
 
   for (let pieceIndex = 0; pieceIndex < maxPieceCount; pieceIndex += 1) {
-    const baselinePiece = baselinePieces[pieceIndex] ?? null;
-    const candidatePiece = candidatePieces[pieceIndex] ?? null;
-    const pieceSlot = candidatePiece?.slot ?? baselinePiece?.slot ?? "unknown";
-    const pieceName = candidatePiece?.pieceName ?? baselinePiece?.pieceName ?? "Unknown piece";
-    const pieceLabel = `${slotLabel(pieceSlot)} - ${pieceName}`;
-
-    const baselineLookup = buildMeldLookupBySlotIndex(baselinePiece);
-    const candidateLookup = buildMeldLookupBySlotIndex(candidatePiece);
-    const slotIndices = new Set([
-      ...Array.from(baselineLookup.keys()),
-      ...Array.from(candidateLookup.keys()),
-    ]);
-    const orderedSlots = Array.from(slotIndices.values()).sort((a, b) => a - b);
-
-    for (const slotIndex of orderedSlots) {
-      const baselineMeld = baselineLookup.get(slotIndex);
-      const candidateMeld = candidateLookup.get(slotIndex);
-      const slotTag = `slot ${slotIndex + 1}`;
-      const meldKey = `${pieceIndex}:${slotIndex}`;
-      if (!baselineMeld && candidateMeld) {
-        changedPieceIndices.add(pieceIndex);
-        changedMeldKeys.add(meldKey);
-        lines.push(`${pieceLabel} ${slotTag}: add ${describeMeldShort(candidateMeld)}`);
-        continue;
-      }
-      if (baselineMeld && !candidateMeld) {
-        changedPieceIndices.add(pieceIndex);
-        changedMeldKeys.add(meldKey);
-        lines.push(`${pieceLabel} ${slotTag}: remove ${describeMeldShort(baselineMeld)}`);
-        continue;
-      }
-      if (baselineMeld && candidateMeld && !meldEquivalent(baselineMeld, candidateMeld)) {
-        changedPieceIndices.add(pieceIndex);
-        changedMeldKeys.add(meldKey);
-        lines.push(
-          `${pieceLabel} ${slotTag}: replace ${describeMeldShort(baselineMeld)} -> ${describeMeldShort(candidateMeld)}`,
-        );
-      }
+    const pieceDiff = diffPieceMelds(
+      pieceIndex,
+      baselinePieces[pieceIndex] ?? null,
+      candidatePieces[pieceIndex] ?? null,
+    );
+    if (pieceDiff.lines.length > 0) {
+      changedPieceIndices.add(pieceIndex);
+    }
+    for (const line of pieceDiff.lines) {
+      lines.push(line);
+    }
+    for (const key of pieceDiff.changedMeldKeys) {
+      changedMeldKeys.add(key);
     }
   }
 
