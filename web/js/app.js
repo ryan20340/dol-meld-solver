@@ -1354,32 +1354,79 @@ function alignPlanMeldsToBaseline(baselinePlan, candidatePlan) {
   return { ...candidatePlan, pieceMelds: alignedPieces };
 }
 
-// Align a refine variant's meld rows to the baseline, then attach the diff.
-// Diffing on the aligned plan is equivalent to the original (changedMeldKeys are
-// keyed on slotIndex, which alignment preserves), so this is the single entry
-// point both refine paths use.
-function decoratePlanWithRefineDiff(baselinePlan, plan) {
+// Materia melded into a piece behaves like a stack: to change the materia in slot
+// i you must first retrieve (and destroy) every materia above it, then re-meld
+// slot i and everything that sat above it. So the real effort of touching a piece
+// is not the count of changed slots but (filled slots) - (earliest changed slot):
+// every materia from the first change up to the top has to be re-melded. This
+// rewards concentrating changes into a single piece and into its highest slots,
+// e.g. doing a second swap in a piece that's already being disturbed is "free".
+//
+// Slots within a piece are interchangeable, and the candidate melds have already
+// been aligned to the baseline (unchanged materia sit in their baseline rows,
+// changes drop into the vacated/highest rows), so the array index IS the physical
+// slot a player would use and a position-wise compare gives the minimal re-meld
+// count achievable for that materia set.
+function computeRemeldOperationCount(baselinePieceMelds, candidatePieceMelds) {
+  const baselinePieces = Array.isArray(baselinePieceMelds) ? baselinePieceMelds : [];
+  const candidatePieces = Array.isArray(candidatePieceMelds) ? candidatePieceMelds : [];
+  const pieceCount = Math.max(baselinePieces.length, candidatePieces.length);
+  let total = 0;
+  for (let pieceIndex = 0; pieceIndex < pieceCount; pieceIndex += 1) {
+    const baseMelds = Array.isArray(baselinePieces[pieceIndex]?.melds) ? baselinePieces[pieceIndex].melds : [];
+    const candMelds = Array.isArray(candidatePieces[pieceIndex]?.melds) ? candidatePieces[pieceIndex].melds : [];
+    const filledSlots = Math.max(baseMelds.length, candMelds.length);
+    let earliestChange = -1;
+    for (let slot = 0; slot < filledSlots; slot += 1) {
+      const base = baseMelds[slot];
+      const cand = candMelds[slot];
+      const matches = base && cand && meldEquivalent(base, cand);
+      if (!matches) {
+        earliestChange = slot;
+        break;
+      }
+    }
+    if (earliestChange >= 0) {
+      total += filledSlots - earliestChange;
+    }
+  }
+  return total;
+}
+
+// Align a refine variant's meld rows to the baseline, then attach the diff. The
+// diff carries both the raw changed-slot `count` and the slot-order-aware
+// `remeldCount`; `activeCost` is whichever the current refine run ranks by, so the
+// sorters (here and in advanced-postprocess) read a single field. Diffing on the
+// aligned plan is equivalent to the original (changedMeldKeys are keyed on
+// slotIndex, which alignment preserves), so this is the single entry point both
+// refine paths use.
+function decoratePlanWithRefineDiff(baselinePlan, plan, options = {}) {
+  const disregardSlotOrder = options?.disregardSlotOrder === true;
   const aligned = alignPlanMeldsToBaseline(baselinePlan, plan);
+  const adjustmentDiff = buildAdjustmentDiffForPlan(baselinePlan, aligned);
+  adjustmentDiff.remeldCount = computeRemeldOperationCount(baselinePlan?.pieceMelds, aligned.pieceMelds);
+  adjustmentDiff.activeCost = disregardSlotOrder ? adjustmentDiff.count : adjustmentDiff.remeldCount;
   return {
     ...aligned,
-    adjustmentDiff: buildAdjustmentDiffForPlan(baselinePlan, aligned),
+    adjustmentDiff,
   };
 }
 
-function annotateResultsWithRefineDiff(results, baselinePlan) {
+function annotateResultsWithRefineDiff(results, baselinePlan, options = {}) {
+  const disregardSlotOrder = options?.disregardSlotOrder === true;
   const rows = Array.isArray(results) ? results : [];
   return rows.map((row) => {
     const plans = Array.isArray(row?.plans) ? row.plans : [];
     const plansWithDiff = plans
-      .map((plan) => decoratePlanWithRefineDiff(baselinePlan, plan))
+      .map((plan) => decoratePlanWithRefineDiff(baselinePlan, plan, { disregardSlotOrder }))
       .sort((left, right) => {
-        const leftCount = normalizeNonNegativeInteger(left?.adjustmentDiff?.count, 0);
-        const rightCount = normalizeNonNegativeInteger(right?.adjustmentDiff?.count, 0);
-        return leftCount - rightCount;
+        const leftCost = normalizeNonNegativeInteger(left?.adjustmentDiff?.activeCost, 0);
+        const rightCost = normalizeNonNegativeInteger(right?.adjustmentDiff?.activeCost, 0);
+        return leftCost - rightCost;
       });
     const bestAdjustmentCount = plansWithDiff.reduce((minValue, plan) => {
-      const count = normalizeNonNegativeInteger(plan?.adjustmentDiff?.count, 0);
-      return Math.min(minValue, count);
+      const cost = normalizeNonNegativeInteger(plan?.adjustmentDiff?.activeCost, 0);
+      return Math.min(minValue, cost);
     }, Number.POSITIVE_INFINITY);
     return {
       ...row,
@@ -1961,6 +2008,7 @@ function openSavedPlanRefineDialog(planId) {
     planId: safeId,
     objective: REFINE_OBJECTIVES.IMPROVE_SCORE,
     targets: defaultRefineTargetsForSavedPlan(state.savedPlans[idx]),
+    disregardSlotOrder: false,
   };
   render();
 }
@@ -1976,6 +2024,15 @@ function updateSavedPlanRefineDraft({ planId, field, value }) {
     state.savedPlansUi.refineDialog = {
       ...dialog,
       objective: normalizeRefineObjective(value),
+    };
+    render();
+    return;
+  }
+
+  if (field === "disregardSlotOrder") {
+    state.savedPlansUi.refineDialog = {
+      ...dialog,
+      disregardSlotOrder: value === true,
     };
     render();
     return;
@@ -2027,6 +2084,7 @@ async function submitSavedPlanRefineDialog(planId) {
   }
 
   const objective = normalizeRefineObjective(dialog.objective);
+  const disregardSlotOrder = dialog.disregardSlotOrder === true;
   const refineWithAdvanced = isAdvancedModeEnabled();
   let targetOverride = null;
   if (objective === REFINE_OBJECTIVES.HIT_NEW_TARGETS && !refineWithAdvanced) {
@@ -2041,6 +2099,7 @@ async function submitSavedPlanRefineDialog(planId) {
   await refineSavedPlan(planId, {
     objective,
     targetOverride,
+    disregardSlotOrder,
   });
 }
 
@@ -2059,6 +2118,7 @@ async function refineSavedPlan(planId, options = {}) {
 
   const savedPlan = state.savedPlans[idx];
   const objective = normalizeRefineObjective(options?.objective);
+  const disregardSlotOrder = options?.disregardSlotOrder === true;
   const refineWithAdvanced = isAdvancedModeEnabled();
 
   let targetOverride = summarizeTotals(state.targets);
@@ -2093,7 +2153,7 @@ async function refineSavedPlan(planId, options = {}) {
     statusContext,
     advancedDisplayLimit: refineWithAdvanced ? ADVANCED_FRONTIER_HARD_CAP : undefined,
     advancedDecoratePlan: refineWithAdvanced
-      ? (plan) => decoratePlanWithRefineDiff(savedPlan, plan)
+      ? (plan) => decoratePlanWithRefineDiff(savedPlan, plan, { disregardSlotOrder })
       : null,
     advancedPreferLowAdjustment: refineWithAdvanced,
     refineBaseline: refineWithAdvanced ? buildRefineBaselineTokens(savedPlan) : undefined,
@@ -2106,7 +2166,7 @@ async function refineSavedPlan(planId, options = {}) {
           gp: row?.totalGp,
         }),
       }));
-      const withDiff = annotateResultsWithRefineDiff(rowsWithTargets, savedPlan);
+      const withDiff = annotateResultsWithRefineDiff(rowsWithTargets, savedPlan, { disregardSlotOrder });
       return rankRefineResults(withDiff, {
         objective,
         baselineScore,

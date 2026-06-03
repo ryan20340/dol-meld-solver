@@ -689,6 +689,12 @@ function compareAdvancedRows(left, right) {
 }
 
 function planAdjustmentCount(plan) {
+  // activeCost is the cost the current refine run ranks by (raw changed-slot count
+  // or slot-order-aware re-meld count); fall back to count for non-refine plans.
+  const active = Number(plan?.adjustmentDiff?.activeCost);
+  if (Number.isFinite(active)) {
+    return Math.max(0, Math.floor(active));
+  }
   const count = Number(plan?.adjustmentDiff?.count);
   return Number.isFinite(count) ? Math.max(0, Math.floor(count)) : Number.POSITIVE_INFINITY;
 }

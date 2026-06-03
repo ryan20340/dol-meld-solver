@@ -1146,9 +1146,15 @@ function buildAdjustmentDiffHtml(adjustmentDiff) {
     .join("");
   const hiddenCount = Math.max(0, lines.length - 24);
   const hiddenNote = hiddenCount > 0 ? `<li class="muted">...and ${hiddenCount} more changes.</li>` : "";
+  // remeldCount accounts for the slots above each change that must be re-melded;
+  // it is >= count whenever any change sits below the top of a piece.
+  const remeldCount = normalizeNonNegativeInteger(adjustmentDiff?.remeldCount);
+  const remeldNote = remeldCount > count
+    ? ` <span class="muted">(${remeldCount} re-melds incl. slots above each change)</span>`
+    : "";
   return `
     <div class="adjustment-diff">
-      <p class="adjustment-summary"><strong>Changes from baseline:</strong> ${count}</p>
+      <p class="adjustment-summary"><strong>Changes from baseline:</strong> ${count}${remeldNote}</p>
       <ul class="adjustment-list">
         ${renderedLines}
         ${hiddenNote}
@@ -1242,6 +1248,8 @@ function buildSavedPlanRefinePanel(savedPlanId, state, baselineTotals) {
   };
   const improveChecked = objective === REFINE_OBJECTIVES.IMPROVE_SCORE ? "checked" : "";
   const targetsChecked = objective === REFINE_OBJECTIVES.HIT_NEW_TARGETS ? "checked" : "";
+  const disregardSlotOrder = dialog?.disregardSlotOrder === true;
+  const disregardChecked = disregardSlotOrder ? "checked" : "";
   const objectiveNote = objective === REFINE_OBJECTIVES.HIT_NEW_TARGETS && advancedEnabled
     ? '<p class="muted">Advanced refine uses the enabled breakpoint profiles as targets.</p>'
     : "";
@@ -1294,6 +1302,23 @@ function buildSavedPlanRefinePanel(savedPlanId, state, baselineTotals) {
           >
           <span>Hit new targets</span>
         </label>
+      </div>
+      <div class="saved-plan-refine-slot-order">
+        <label class="checkbox-row">
+          <input
+            type="checkbox"
+            data-action="saved-plan-refine-slot-order"
+            data-plan-id="${escapeHtml(savedPlanId)}"
+            ${disregardChecked}
+          >
+          <span>Disregard re-meld slot order</span>
+        </label>
+        <p class="muted">
+          Off (default): rank by the real number of re-melds. Changing a low slot forces
+          re-melding every materia above it, so changes are packed into as few slots and
+          pieces as possible. On: rank purely by how many slots differ, ignoring the
+          knock-on re-melds.
+        </p>
       </div>
       ${objectiveNote}
       ${targetInputsHtml}
@@ -1829,6 +1854,16 @@ function wireEvents(resultsPanelElement, handlers) {
         planId: event.currentTarget.getAttribute("data-plan-id"),
         field: event.currentTarget.getAttribute("data-refine-target"),
         value: event.currentTarget.value,
+      });
+    });
+  });
+
+  resultsPanelElement.querySelectorAll('input[data-action="saved-plan-refine-slot-order"]').forEach((input) => {
+    input.addEventListener("change", (event) => {
+      handlers?.onSavedPlanRefineDraftChange?.({
+        planId: event.currentTarget.getAttribute("data-plan-id"),
+        field: "disregardSlotOrder",
+        value: Boolean(event.currentTarget.checked),
       });
     });
   });
