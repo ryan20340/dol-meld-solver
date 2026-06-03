@@ -280,6 +280,24 @@ function createMeldRecord(slot, materia, appliedValue) {
   };
 }
 
+// Materia overkill: raw value the cap clamped away (raw - applied), summed over a
+// layout's melds. Zero when nothing is capped. Among layouts that reach the same
+// totals with the same meld count, the one with less waste uses lower-grade
+// materia for the same result — e.g. a Grade VII clamped to +6 wastes 6, while a
+// lower grade that still fills the +6 of cap room wastes nothing.
+function candidateWastedValue(candidate) {
+  const melds = Array.isArray(candidate?.melds) ? candidate.melds : [];
+  let waste = 0;
+  for (const meld of melds) {
+    const raw = normalizePositiveInteger(meld?.rawValue, 0);
+    const applied = normalizePositiveInteger(meld?.appliedValue, 0);
+    if (raw > applied) {
+      waste += raw - applied;
+    }
+  }
+  return waste;
+}
+
 function shouldPreferCandidateByMelds(nextCandidate, currentCandidate) {
   if (!currentCandidate) {
     return true;
@@ -289,6 +307,16 @@ function shouldPreferCandidateByMelds(nextCandidate, currentCandidate) {
   const currentMeldCount = Array.isArray(currentCandidate?.melds) ? currentCandidate.melds.length : 0;
   if (nextMeldCount !== currentMeldCount) {
     return nextMeldCount < currentMeldCount;
+  }
+
+  // Identical totals and meld count: prefer the layout that wastes the least
+  // materia, so the solver doesn't melt a needlessly high grade into a slot the
+  // cap clamps anyway. Lower grades only reach here if legal for the slot, so an
+  // illegal lower grade never displaces a legal higher one.
+  const nextWaste = candidateWastedValue(nextCandidate);
+  const currentWaste = candidateWastedValue(currentCandidate);
+  if (nextWaste !== currentWaste) {
+    return nextWaste < currentWaste;
   }
 
   const nextSignature = candidateSignature(nextCandidate);
